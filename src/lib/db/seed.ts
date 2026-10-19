@@ -65,6 +65,5 @@ export async function seedShop(db: Database) {
     }
   });
 
-
   return { products: products.length, customers: customers.length, orders: orders.length };
 }
