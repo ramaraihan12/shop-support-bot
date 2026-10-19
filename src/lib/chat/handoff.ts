@@ -6,20 +6,20 @@ const ASKED_FOR_HUMAN = [
   /\b(talk|speak|chat)\s+(to|with)\s+(a\s+)?(human|person|real person|agent|someone|staff|manager)\b/i,
   /\b(real|live)\s+(person|human|agent)\b/i,
   /\bhuman\s+(agent|support|please)\b/i,
-  /\b(bicara|ngomong|ngobrol|chat|hubungkan|sambungkan|disambungkan|dihubungkan|minta|mau|pengen|ingin)\b.{0,20}\b(manusia|admin|cs|customer service|operator|petugas|orang asli)\b/i,
+  /\b(bicara|ngomong|ngobrol|chat|hubungkan|sambungkan|disambungkan|dihubungkan)\s+(saya\s+|aku\s+)?(sama|dengan|ama|ke)\s+(manusia|admin|cs|customer service|operator|petugas|orang asli)\b/i,
   /\b(bukan|jangan)\s+(bot|robot)\b/i,
 ];
 
 const STRONG_ANGER = [
   /\b(scam|scammer|fraud|ripoff|rip-off|unacceptable|ridiculous|furious|wtf)\b/i,
-  /\b(penipu|nipu|tipu|penipuan|brengsek|sialan|bangsat|anjing|goblok|bego|kecewa\s+(banget|berat|sekali))\b/i,
+  /\b(penipu|nipu|tipu|penipuan|brengsek|sialan|bangsat|goblok|bego|kecewa\s+(banget|berat|sekali))\b/i,
   /\b(gak|ga|nggak|tidak)\s+becus\b/i,
   /\b(lapor(in)?|laporkan|viralin|viralkan)\b.{0,30}\b(polisi|ylki|bpkn|sosmed|medsos|twitter|instagram|tiktok)\b/i,
 ];
 
 const MILD_ANGER = [
   /\b(angry|annoyed|frustrated|disappointed|terrible|awful|useless|worst)\b/i,
-  /\b(kecewa|kesal|kesel|marah|parah|lambat|lelet|ngecewain|zonk|capek)\b/i,
+  /\b(kecewa|kesal|kesel|marah|anjing|lambat|lelet|ngecewain|zonk|capek)\b/i,
 ];
 
 function isShouting(text: string): boolean {
@@ -47,7 +47,7 @@ export function detectHandoff(text: string): HandoffReason | null {
 export async function startHandoff(
   store: SupportStore,
   conversation: Conversation,
-  input: { reason: string; lastMessage: string; contact?: string },
+  input: { reason: string; lastMessage: string },
 ): Promise<{ ticketCode: string }> {
   const ticket = await store.createTicket({
     conversationId: conversation.id,
@@ -55,7 +55,6 @@ export async function startHandoff(
     priority: "high",
     subject: `Handoff requested (${conversation.channel})`,
     details: `${input.reason}\n\nLast customer message:\n${input.lastMessage}`,
-    contact: input.contact,
   });
   await store.markHandoff(conversation.id);
   conversation.status = "handoff";

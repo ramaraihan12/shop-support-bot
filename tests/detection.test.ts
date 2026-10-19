@@ -32,6 +32,11 @@ describe("detectHandoff", () => {
     "Kopi Gayo enak parah, mau beli lagi",
     "Jam berapa CS buka?",
     "kecewa dikit karena stok Kintamani habis",
+    "mau tanya, CS buka jam berapa?",
+    "mau pesan 2 bungkus ya admin",
+    "minta nomor rekening admin dong",
+    "Kopi Toraja parah enak!!!",
+    "ini enak banget anjing",
   ])("leaves %j to the bot", (text) => {
     expect(detectHandoff(text)).toBeNull();
   });
