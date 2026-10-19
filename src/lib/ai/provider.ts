@@ -36,13 +36,24 @@ export function getEmbeddingModel(env: Env): EmbeddingModel {
   const modelId = env.EMBEDDING_MODEL ?? DEFAULT_EMBEDDING_MODELS[env.EMBEDDING_PROVIDER];
   switch (env.EMBEDDING_PROVIDER) {
     case "ollama":
-      return createOllama({ baseURL: env.OLLAMA_BASE_URL }).embedding(modelId);
+      return createOllama({ baseURL: env.OLLAMA_BASE_URL, fetch: smallContextFetch }).embedding(modelId);
     case "openai":
       return openai.embedding(modelId);
     case "google":
       return google.embedding(modelId);
   }
 }
+
+// Ollama gives an embedding model the server's default context, often 32k
+// tokens. Policy chunks are a few hundred tokens, so ask for a small one and
+// leave the VRAM to the chat model.
+const EMBEDDING_CONTEXT = 2048;
+
+const smallContextFetch: typeof fetch = (input, init) => {
+  if (typeof init?.body !== "string") return fetch(input, init);
+  const body = JSON.parse(init.body) as Record<string, unknown>;
+  return fetch(input, { ...init, body: JSON.stringify({ ...body, options: { num_ctx: EMBEDDING_CONTEXT } }) });
+};
 
 /**
  * Qwen 3.5 and friends think before answering by default. For a support chat
