@@ -10,6 +10,9 @@ import { createSupportTools } from "./tools";
 
 export const HISTORY_LIMIT = 20;
 export const MAX_STEPS = 6;
+// A support question fits easily. Longer pastes get cut so one message
+// can't fill the model's context.
+export const MAX_MESSAGE_CHARS = 1000;
 
 type StreamOptions = Parameters<typeof streamText>[0];
 
@@ -39,9 +42,11 @@ export type Reply =
  */
 export async function respond(deps: RespondDeps, incoming: IncomingMessage): Promise<Reply> {
   const { store, limiter } = deps;
-  const language = detectLanguage(incoming.text);
+  const { channel, externalId } = incoming;
+  const text = incoming.text.trim().slice(0, MAX_MESSAGE_CHARS);
+  const language = detectLanguage(text);
 
-  const limit = limiter.check(`${incoming.channel}:${incoming.externalId}`);
+  const limit = limiter.check(`${channel}:${externalId}`);
   if (!limit.allowed) {
     return {
       kind: "rate_limited",
@@ -50,13 +55,13 @@ export async function respond(deps: RespondDeps, incoming: IncomingMessage): Pro
     };
   }
 
-  const conversation = await store.getOrCreateConversation(incoming.channel, incoming.externalId);
+  const conversation = await store.getOrCreateConversation(channel, externalId);
   const history = await store.getRecentMessages(conversation.id, HISTORY_LIMIT);
-  await store.saveMessage(conversation.id, { role: "user", content: incoming.text });
+  await store.saveMessage(conversation.id, { role: "user", content: text });
 
-  const handoffReply = async (text: string) => {
-    await store.saveMessage(conversation.id, { role: "assistant", content: text });
-    return { kind: "handoff" as const, text };
+  const handoffReply = async (answer: string) => {
+    await store.saveMessage(conversation.id, { role: "assistant", content: answer });
+    return { kind: "handoff" as const, text: answer };
   };
 
   // Once a person owns the conversation the bot stays out of it.
@@ -64,16 +69,16 @@ export async function respond(deps: RespondDeps, incoming: IncomingMessage): Pro
     return handoffReply(replies.waitingForHuman(language));
   }
 
-  const handoffReason = detectHandoff(incoming.text);
+  const handoffReason = detectHandoff(text);
   if (handoffReason) {
     const { ticketCode } = await startHandoff(store, conversation, {
       reason: handoffReason === "asked_for_human" ? "Customer asked for a person." : "Customer sounds upset.",
-      lastMessage: incoming.text,
+      lastMessage: text,
     });
     return handoffReply(replies.handoff(language, ticketCode));
   }
 
-  const result = streamModelReply(deps, conversation, history, incoming.text);
+  const result = streamModelReply(deps, conversation, history, text);
   return { kind: "model", result, language };
 }
 
