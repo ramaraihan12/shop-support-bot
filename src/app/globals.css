@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "SFMono-Regular", Menlo, monospace;
+
+  --color-paper: #eef0ea;
+  --color-panel: #f7f8f4;
+  --color-ink: #1f2a24;
+  --color-muted: #5f6a63;
+  --color-husk: #d6dacb;
+  --color-bean: #4f6b47;
+  --color-bean-deep: #3b5236;
+  --color-cherry: #b23a2e;
+}
+
+@layer base {
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-bean;
+  }
+}
