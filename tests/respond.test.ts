@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { respond, type RespondDeps } from "@/lib/chat/respond";
 import { MAX_FAILED_LOOKUPS } from "@/lib/chat/tools";
 import { createRateLimiter } from "@/lib/rate-limit";
@@ -20,6 +20,11 @@ function deps(model: RespondDeps["model"], overrides: Partial<RespondDeps> = {})
     ...overrides,
   };
 }
+
+const shippingAndPaymentMatches = [
+  { source: "pengiriman.md", heading: "Pengiriman > Kurir", content: "JNE ke Bali 3-5 hari.", similarity: 0.71 },
+  { source: "pembayaran.md", heading: "Pembayaran > Metode", content: "QRIS diterima.", similarity: 0.12 },
+];
 
 async function send(d: RespondDeps, text: string, externalId = "session-1") {
   const reply = await respond(d, { channel: "web", externalId, text });
@@ -124,10 +129,7 @@ describe("other tools", () => {
   });
 
   it("only passes policy chunks that are similar enough", async () => {
-    store.policyMatches = [
-      { source: "pengiriman.md", heading: "Pengiriman > Kurir", content: "JNE ke Bali 3-5 hari.", similarity: 0.71 },
-      { source: "pembayaran.md", heading: "Pembayaran > Metode", content: "QRIS diterima.", similarity: 0.12 },
-    ];
+    store.policyMatches = shippingAndPaymentMatches;
     const model = scriptedModel([
       { toolCall: { name: "searchPolicies", input: { query: "shipping to Bali" } } },
       { text: "Yes, 3-5 days with JNE." },
@@ -135,9 +137,35 @@ describe("other tools", () => {
 
     await send(deps(model), "Do you ship to Bali?");
 
-    const result = promptText(model, 1);
-    expect(result).toContain("JNE ke Bali 3-5 hari.");
-    expect(result).not.toContain("QRIS diterima.");
+    const toolResult = JSON.stringify(model.doStreamCalls[1]?.prompt.at(-1));
+    expect(toolResult).toContain("JNE ke Bali 3-5 hari.");
+    expect(toolResult).not.toContain("QRIS diterima.");
+  });
+
+  it("hands the model the closest policy sections before it decides anything", async () => {
+    store.policyMatches = shippingAndPaymentMatches;
+    const model = scriptedModel([{ text: "Yes, 3-5 days with JNE." }]);
+
+    await send(deps(model), "Do you ship to Bali?");
+
+    const instructions = JSON.stringify(model.doStreamCalls[0]?.prompt[0]);
+    expect(instructions).toContain("[Pengiriman > Kurir]");
+    expect(instructions).toContain("JNE ke Bali 3-5 hari.");
+    expect(instructions).not.toContain("QRIS diterima.");
+  });
+
+  it("still answers when the policy prefetch fails", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const embed = async (): Promise<number[]> => {
+      throw new Error("embedding model is not loaded");
+    };
+    const model = scriptedModel([{ text: "Halo! Ada yang bisa dibantu?" }]);
+
+    const { text } = await send(deps(model, { embed }), "halo");
+
+    expect(text).toBe("Halo! Ada yang bisa dibantu?");
+    expect(logged).toHaveBeenCalledWith("policy prefetch failed", expect.any(Error));
+    logged.mockRestore();
   });
 
   it("opens a ticket linked to the conversation", async () => {
@@ -213,6 +241,9 @@ describe("conversation flow", () => {
     await send(deps(model), "Do you ship to Bali? How long does it take?");
 
     expect(promptText(model, 0)).toContain("Write your whole reply in English");
+    // The reminder only goes to the model; the stored message stays as typed.
+    expect(JSON.stringify(model.doStreamCalls[0]?.prompt.at(-1))).toContain("[Reply in English]");
+    expect(store.messages.at(-2)?.content).toBe("Do you ship to Bali? How long does it take?");
   });
 
   it("keeps the earlier language when a message gives no hint", async () => {
@@ -221,7 +252,7 @@ describe("conversation flow", () => {
 
     await send(deps(model), "KN-10234");
 
-    expect(promptText(model, 0)).toContain("Write your whole reply in English");
+    expect(JSON.stringify(model.doStreamCalls[0]?.prompt.at(-1))).toContain("[Reply in English]");
   });
 
   it("forces a text answer on the last step", async () => {

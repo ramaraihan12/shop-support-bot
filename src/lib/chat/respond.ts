@@ -3,13 +3,15 @@ import type { EmbedFn } from "@/lib/ai/embeddings";
 import type { RateLimiter } from "@/lib/rate-limit";
 import type { Channel, Conversation, StoredMessage, SupportStore } from "@/lib/store/types";
 import { detectHandoff, startHandoff } from "./handoff";
-import { buildInstructions } from "./instructions";
+import { buildInstructions, languageReminder } from "./instructions";
 import { detectLanguage, type Language } from "./language";
+import { findPolicies, type PolicyExcerpt } from "./policies";
 import { replies } from "./replies";
 import { createSupportTools } from "./tools";
 
 export const HISTORY_LIMIT = 20;
 export const MAX_STEPS = 6;
+export const PREFETCHED_POLICIES = 3;
 // A support question fits easily. Longer pastes get cut so one message
 // can't fill the model's context.
 export const MAX_MESSAGE_CHARS = 1000;
@@ -82,23 +84,44 @@ export async function respond(deps: RespondDeps, incoming: IncomingMessage): Pro
     return handoffReply(replies.handoff(language, ticketCode));
   }
 
-  const result = streamModelReply(deps, { conversation, history, text, language });
+  const policies = await prefetchPolicies(deps, text);
+  const result = streamModelReply(deps, { conversation, history, text, language, policies });
   return { kind: "model", result, language };
+}
+
+/**
+ * Small local models skip the search tool now and then and answer policy
+ * questions from memory. Handing them the closest sections up front keeps
+ * those answers grounded; the tool is still there for follow-up searches.
+ */
+async function prefetchPolicies(deps: RespondDeps, text: string): Promise<PolicyExcerpt[]> {
+  try {
+    return await findPolicies(deps.store, deps.embed, text, PREFETCHED_POLICIES);
+  } catch (error) {
+    console.error("policy prefetch failed", error);
+    return [];
+  }
 }
 
 function streamModelReply(
   deps: RespondDeps,
-  turn: { conversation: Conversation; history: StoredMessage[]; text: string; language: Language },
+  turn: {
+    conversation: Conversation;
+    history: StoredMessage[];
+    text: string;
+    language: Language;
+    policies: PolicyExcerpt[];
+  },
 ) {
-  const { conversation, history, text, language } = turn;
+  const { conversation, history, text, language, policies } = turn;
   const messages: ModelMessage[] = [
     ...history.map((m): ModelMessage => ({ role: m.role, content: m.content })),
-    { role: "user", content: text },
+    { role: "user", content: `${text}\n\n${languageReminder(language)}` },
   ];
 
   return streamText({
     model: deps.model,
-    instructions: buildInstructions(language, deps.now?.()),
+    instructions: buildInstructions({ language, policies, now: deps.now?.() }),
     messages,
     tools: createSupportTools({
       store: deps.store,

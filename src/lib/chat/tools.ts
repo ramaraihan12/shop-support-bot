@@ -4,12 +4,11 @@ import type { EmbedFn } from "@/lib/ai/embeddings";
 import { contactMatches, orderNumberSchema, toCustomerView } from "@/lib/orders";
 import type { Conversation, ProductRecord, SupportStore } from "@/lib/store/types";
 import { startHandoff } from "./handoff";
+import { findPolicies } from "./policies";
 
 export const MAX_FAILED_LOOKUPS = 5;
 const LOW_STOCK = 5;
 const POLICY_RESULTS = 4;
-// Below this the chunk is usually about something else entirely.
-const MIN_POLICY_SIMILARITY = 0.35;
 
 export const lookupOrderInput = z
   .object({
@@ -48,13 +47,9 @@ export function createSupportTools({ store, conversation, embed, lastUserMessage
       inputSchema: z.object({
         query: z.string().trim().min(3).max(200).describe("The customer's question, rephrased as a search query"),
       }),
-      execute: async ({ query }) => {
-        const matches = await store.searchPolicies(await embed(query), POLICY_RESULTS);
-        const relevant = matches.filter((m) => m.similarity >= MIN_POLICY_SIMILARITY);
-        return {
-          results: relevant.map((m) => ({ section: m.heading, text: m.content })),
-        };
-      },
+      execute: async ({ query }) => ({
+        results: await findPolicies(store, embed, query, POLICY_RESULTS),
+      }),
     }),
 
     checkStock: tool({
