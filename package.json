@@ -18,7 +18,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx --env-file-if-exists=.env scripts/seed.ts",
-    "ingest": "tsx --env-file-if-exists=.env scripts/ingest-policies.ts"
+    "ingest": "tsx --env-file-if-exists=.env scripts/ingest-policies.ts",
+    "telegram:webhook": "tsx --env-file-if-exists=.env scripts/telegram-webhook.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "4.0.82",
