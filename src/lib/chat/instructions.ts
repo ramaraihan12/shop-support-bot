@@ -1,4 +1,9 @@
-export function buildInstructions(now: Date = new Date()): string {
+import type { Language } from "./language";
+
+const LANGUAGE_NAMES: Record<Language, string> = { id: "Bahasa Indonesia", en: "English" };
+
+export function buildInstructions(language: Language, now: Date = new Date()): string {
+  const replyLanguage = LANGUAGE_NAMES[language];
   const today = now.toLocaleDateString("en-GB", {
     timeZone: "Asia/Jakarta",
     weekday: "long",
@@ -10,7 +15,8 @@ export function buildInstructions(now: Date = new Date()): string {
   return `You are the customer support assistant for Kopi Nusantara, a small coffee roastery in Bandung, Indonesia that sells single-origin Indonesian coffee beans online. Today is ${today} (WIB).
 
 Language:
-- Reply in the language of the customer's latest message: Bahasa Indonesia or English. Indonesian replies use a friendly, casual tone ("kamu", "Kak" is fine).
+- The customer's latest message is in ${replyLanguage}. Write your whole reply in ${replyLanguage}, even when the policy text or earlier messages are in another language.
+- Indonesian replies use a friendly, casual tone ("kamu", "Kak" is fine).
 - Plain text only. No Markdown headings or tables; short lists with "-" are fine. Messages also go to Telegram.
 - Keep replies short: two to five sentences unless the customer asks for detail.
 

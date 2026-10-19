@@ -44,13 +44,12 @@ export async function respond(deps: RespondDeps, incoming: IncomingMessage): Pro
   const { store, limiter } = deps;
   const { channel, externalId } = incoming;
   const text = incoming.text.trim().slice(0, MAX_MESSAGE_CHARS);
-  const language = detectLanguage(text);
 
   const limit = limiter.check(`${channel}:${externalId}`);
   if (!limit.allowed) {
     return {
       kind: "rate_limited",
-      text: replies.rateLimited(language, limit.retryAfterSeconds),
+      text: replies.rateLimited(detectLanguage(text), limit.retryAfterSeconds),
       retryAfterSeconds: limit.retryAfterSeconds,
     };
   }
@@ -58,6 +57,11 @@ export async function respond(deps: RespondDeps, incoming: IncomingMessage): Pro
   const conversation = await store.getOrCreateConversation(channel, externalId);
   const history = await store.getRecentMessages(conversation.id, HISTORY_LIMIT);
   await store.saveMessage(conversation.id, { role: "user", content: text });
+
+  // A message like "KN-10234, bagus@example.com" says nothing about language,
+  // so keep the one the customer used before.
+  const previous = history.findLast((m) => m.role === "user");
+  const language = detectLanguage(text, previous ? detectLanguage(previous.content) : "id");
 
   const handoffReply = async (answer: string) => {
     await store.saveMessage(conversation.id, { role: "assistant", content: answer });
@@ -78,16 +82,15 @@ export async function respond(deps: RespondDeps, incoming: IncomingMessage): Pro
     return handoffReply(replies.handoff(language, ticketCode));
   }
 
-  const result = streamModelReply(deps, conversation, history, text);
+  const result = streamModelReply(deps, { conversation, history, text, language });
   return { kind: "model", result, language };
 }
 
 function streamModelReply(
   deps: RespondDeps,
-  conversation: Conversation,
-  history: StoredMessage[],
-  text: string,
+  turn: { conversation: Conversation; history: StoredMessage[]; text: string; language: Language },
 ) {
+  const { conversation, history, text, language } = turn;
   const messages: ModelMessage[] = [
     ...history.map((m): ModelMessage => ({ role: m.role, content: m.content })),
     { role: "user", content: text },
@@ -95,7 +98,7 @@ function streamModelReply(
 
   return streamText({
     model: deps.model,
-    instructions: buildInstructions(deps.now?.()),
+    instructions: buildInstructions(language, deps.now?.()),
     messages,
     tools: createSupportTools({
       store: deps.store,

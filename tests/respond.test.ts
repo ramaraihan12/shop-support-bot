@@ -206,6 +206,24 @@ describe("conversation flow", () => {
     expect(prompt.map((m) => m.role)).toEqual(["system", "user", "assistant", "user"]);
   });
 
+  it("tells the model to switch to English when the customer does", async () => {
+    await send(deps(scriptedModel([{ text: "Halo! Ada yang bisa dibantu?" }])), "halo kak, mau tanya dong");
+    const model = scriptedModel([{ text: "Yes, we ship to Bali." }]);
+
+    await send(deps(model), "Do you ship to Bali? How long does it take?");
+
+    expect(promptText(model, 0)).toContain("Write your whole reply in English");
+  });
+
+  it("keeps the earlier language when a message gives no hint", async () => {
+    await send(deps(scriptedModel([{ text: "Sure, what's the order number?" }])), "Where is my order?");
+    const model = scriptedModel([{ text: "Thanks, and the email?" }]);
+
+    await send(deps(model), "KN-10234");
+
+    expect(promptText(model, 0)).toContain("Write your whole reply in English");
+  });
+
   it("forces a text answer on the last step", async () => {
     const loop = { toolCall: { name: "checkStock", input: {} } };
     const model = scriptedModel([loop, loop, loop, loop, loop, { text: "Ini katalog kami." }]);

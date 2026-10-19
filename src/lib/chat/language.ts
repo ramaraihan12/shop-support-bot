@@ -16,8 +16,9 @@ const ENGLISH = new Set([
 ]);
 
 /**
- * Picks the reply language for canned messages. The model handles its own
- * replies; this only matters for the few answers that skip the model.
+ * Word-count guess at whether a message is Indonesian or English. Used for
+ * canned replies and as an explicit hint to the model, which otherwise tends
+ * to drift into Indonesian once the policy text or history is Indonesian.
  */
 export function detectLanguage(text: string, fallback: Language = "id"): Language {
   const words = text.toLowerCase().match(/\p{L}+/gu) ?? [];
