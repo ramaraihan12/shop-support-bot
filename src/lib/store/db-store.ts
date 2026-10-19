@@ -124,8 +124,9 @@ export function createDbStore(db: Database): SupportStore {
         return db.select(columns).from(products).orderBy(asc(products.name)).limit(limit);
       }
 
+      // Terms only hold letters, digits and hyphens, so nothing needs escaping for LIKE.
       const conditions: SQL[] = terms.flatMap((term) => {
-        const pattern = `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+        const pattern = `%${term}%`;
         return [ilike(products.name, pattern), ilike(products.origin, pattern), ilike(products.sku, pattern)];
       });
 
