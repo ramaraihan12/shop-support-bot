@@ -1,0 +1,51 @@
+# Postgres + the app. Ollama is expected on the host (http://localhost:11434).
+#   docker compose up --build
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: shop_support
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d shop_support"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-off: migrate, seed the fictional shop and embed the policy docs.
+  setup:
+    build:
+      context: .
+      target: build
+    command: sh -c "pnpm db:migrate && pnpm db:seed && pnpm ingest"
+    env_file:
+      - path: .env
+        required: false
+    environment: &overrides
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/shop_support
+      OLLAMA_BASE_URL: http://host.docker.internal:11434/api
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - path: .env
+        required: false
+    environment: *overrides
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
