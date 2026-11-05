@@ -4,6 +4,8 @@
 
 A support chatbot for a small online shop. The demo shop is a made-up Indonesian coffee roaster, Kopi Nusantara. The bot answers questions from the shop's policy docs, checks orders and stock, opens tickets, and hands the chat to a human when the customer asks or is clearly upset. It replies in Bahasa Indonesia or English, whichever the customer writes in.
 
+**Live demo:** https://shop-support-bot-ivory.vercel.app (no login). Try order `KN-10231` with `rina.wulandari@example.com`. It runs on Gemini's free tier with a small daily message cap, and the database sleeps when idle, so the first reply can take a few seconds longer.
+
 ![Chat on a local Ollama model](docs/screenshot.png)
 
 That conversation ran on a local `qwen3.5-9b` through Ollama. Note the last turn: the order belongs to someone else, so the bot says it can't find it and doesn't reveal anything.
@@ -14,6 +16,7 @@ That conversation ran on a local `qwen3.5-9b` through Ollama. Note the last turn
 - Order status, stock and ticket creation are tool calls against Postgres. Tool inputs are checked with Zod.
 - An order lookup needs the order number plus the email or phone used at checkout. If they don't match, the answer is the same as for an order that doesn't exist.
 - Handoff and language are detected before the model runs, and there is a small in-memory rate limit per session.
+- With a hosted model, the web chat also has a per-IP and a daily quota. Those counters live in Postgres, because serverless instances share no memory.
 - The web chat streams over the AI SDK UI message protocol. The Telegram webhook uses the same `respond` function.
 - `/admin` lists conversations and tickets behind basic auth.
 
@@ -45,7 +48,7 @@ Or with Docker, which starts Postgres, runs the setup and serves on port 3000 (O
 docker compose up --build
 ```
 
-Settings are in `.env.example`. To use another provider set `AI_PROVIDER` and the matching API key. Embeddings are stored at 1024 dimensions, so if you change the embedding model, run `pnpm ingest` again.
+Settings are in `.env.example`. To use another provider set `AI_PROVIDER` and the matching API key. Embeddings are stored at 1024 dimensions, so if you change the embedding model, run `pnpm ingest` again. The live demo uses `gemini-3.5-flash-lite` for chat and `gemini-embedding-001` for embeddings, which is asked for 1024 dimensions as well.
 
 ### Telegram
 
@@ -63,7 +66,7 @@ These run offline with the AI SDK mock model. The Postgres tests are skipped unl
 
 ## Notes
 
-- The rate limiter lives in memory, so it only works for a single instance.
+- The per-session rate limiter lives in memory, so it only works for a single instance. The quota in `src/lib/chat/quota.ts` is the one that holds on serverless. It's skipped for Ollama, which has no quota to protect, and Telegram doesn't go through it.
 - A 9B model on a laptop GPU takes a few seconds per reply, and more when it makes a tool call.
 - Replies are only as good as the policy docs. There is no check that an answer actually came from a retrieved section.
 - Next would be an evals script that replays a set of questions and flags wrong answers.
