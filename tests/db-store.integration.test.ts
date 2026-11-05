@@ -2,7 +2,7 @@ import { eq, inArray, like } from "drizzle-orm";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDb, type Database } from "@/lib/db";
-import { conversations, EMBEDDING_DIMENSIONS, policyChunks, tickets } from "@/lib/db/schema";
+import { conversations, EMBEDDING_DIMENSIONS, policyChunks, rateLimits, tickets } from "@/lib/db/schema";
 import { seedShop } from "@/lib/db/seed";
 import { createDbStore } from "@/lib/store/db-store";
 import type { SupportStore } from "@/lib/store/types";
@@ -41,6 +41,7 @@ describe.skipIf(!url)("db store against postgres", () => {
     await db.delete(tickets).where(inArray(tickets.conversationId, ids));
     await db.delete(conversations).where(like(conversations.externalId, `${EXTERNAL_PREFIX}%`));
     await db.delete(policyChunks).where(eq(policyChunks.source, TEST_SOURCE));
+    await db.delete(rateLimits).where(like(rateLimits.key, `${EXTERNAL_PREFIX}%`));
     await close();
   });
 
@@ -123,5 +124,46 @@ describe.skipIf(!url)("db store against postgres", () => {
     });
 
     expect(ticket.code).toMatch(/^TK-\d{4,}$/);
+  });
+
+  it("never loses a hit when requests land at the same time", async () => {
+    const key = `${EXTERNAL_PREFIX}burst`;
+
+    const results = await Promise.all(Array.from({ length: 20 }, () => store.countHit(key, 60)));
+
+    expect(results.map((r) => r.hits).sort((a, b) => a - b)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
+  });
+
+  it("reports how long is left in the window", async () => {
+    const hit = await store.countHit(`${EXTERNAL_PREFIX}window`, 60);
+
+    expect(hit.hits).toBe(1);
+    expect(hit.retryAfterSeconds).toBeGreaterThan(55);
+    expect(hit.retryAfterSeconds).toBeLessThanOrEqual(60);
+  });
+
+  it("starts counting again once the window has passed", async () => {
+    const key = `${EXTERNAL_PREFIX}expired`;
+    await store.countHit(key, 60);
+    await store.countHit(key, 60);
+    await db.update(rateLimits).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(rateLimits.key, key));
+
+    const hit = await store.countHit(key, 60);
+
+    expect(hit.hits).toBe(1);
+    expect(hit.retryAfterSeconds).toBeGreaterThan(55);
+  });
+
+  it("deletes expired counters and keeps live ones", async () => {
+    const stale = `${EXTERNAL_PREFIX}stale`;
+    const live = `${EXTERNAL_PREFIX}live`;
+    await store.countHit(stale, 60);
+    await store.countHit(live, 60);
+    await db.update(rateLimits).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(rateLimits.key, stale));
+
+    await store.deleteExpiredHits();
+
+    const rows = await db.select({ key: rateLimits.key }).from(rateLimits).where(inArray(rateLimits.key, [stale, live]));
+    expect(rows).toEqual([{ key: live }]);
   });
 });

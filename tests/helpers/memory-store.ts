@@ -56,6 +56,8 @@ export class MemoryStore implements SupportStore {
   tickets: (NewTicket & { id: number })[] = [];
   orderLookups: string[] = [];
   policyMatches: PolicyMatch[] = [];
+  hitCounts = new Map<string, { hits: number; expiresAtMs: number }>();
+  nowMs = 0;
 
   async getOrCreateConversation(channel: Conversation["channel"], externalId: string) {
     let conversation = this.conversations.find(
@@ -108,6 +110,22 @@ export class MemoryStore implements SupportStore {
     const id = this.tickets.length + 1;
     this.tickets.push({ ...ticket, id });
     return { id, code: ticketCode(id) };
+  }
+
+  async countHit(key: string, windowSeconds: number) {
+    const current = this.hitCounts.get(key);
+    const hit =
+      current && current.expiresAtMs > this.nowMs
+        ? { ...current, hits: current.hits + 1 }
+        : { hits: 1, expiresAtMs: this.nowMs + windowSeconds * 1000 };
+    this.hitCounts.set(key, hit);
+    return { hits: hit.hits, retryAfterSeconds: Math.ceil((hit.expiresAtMs - this.nowMs) / 1000) };
+  }
+
+  async deleteExpiredHits() {
+    for (const [key, hit] of this.hitCounts) {
+      if (hit.expiresAtMs <= this.nowMs) this.hitCounts.delete(key);
+    }
   }
 
   private conversation(id: string): Conversation {

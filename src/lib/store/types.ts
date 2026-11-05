@@ -47,6 +47,8 @@ export type NewTicket = {
   orderNumber?: string;
 };
 
+export type CountedHit = { hits: number; retryAfterSeconds: number };
+
 /**
  * Everything the bot reads or writes goes through this, so the chat flow can
  * run against an in-memory fake in tests and against Postgres in the app.
@@ -62,6 +64,9 @@ export interface SupportStore {
   searchProducts(query: string | undefined, limit: number): Promise<ProductRecord[]>;
   searchPolicies(embedding: number[], limit: number): Promise<PolicyMatch[]>;
   createTicket(ticket: NewTicket): Promise<{ id: number; code: string }>;
+  /** Adds one hit to a fixed-window counter and returns the new count. */
+  countHit(key: string, windowSeconds: number): Promise<CountedHit>;
+  deleteExpiredHits(): Promise<void>;
 }
 
 export function ticketCode(id: number): string {

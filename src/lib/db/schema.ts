@@ -119,6 +119,14 @@ export const messages = pgTable(
   (t) => [index("messages_conversation_id_idx").on(t.conversationId, t.createdAt)],
 );
 
+// Fixed-window counters for the chat quota. Serverless instances share no
+// memory, so the counts have to live here.
+export const rateLimits = pgTable("rate_limits", {
+  key: text().primaryKey(),
+  hits: integer().notNull(),
+  expiresAt: timestamp({ withTimezone: true }).notNull(),
+});
+
 export const ticketCategory = pgEnum("ticket_category", [
   "order",
   "shipping",

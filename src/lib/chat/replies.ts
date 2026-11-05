@@ -17,6 +17,11 @@ export const replies = {
       ? `Pesannya terlalu cepat. Coba lagi dalam ${retryAfterSeconds} detik.`
       : `That's a lot of messages at once. Try again in ${retryAfterSeconds} seconds.`,
 
+  dailyLimit: (lang: Language) =>
+    lang === "id"
+      ? "Demo ini sudah mencapai batas pesan harian. Coba lagi besok, ya."
+      : "This demo has reached its daily message limit. Please try again tomorrow.",
+
   modelFailed: (lang: Language) =>
     lang === "id"
       ? "Maaf, sistem kami sedang bermasalah. Coba lagi sebentar lagi."

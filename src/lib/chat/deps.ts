@@ -6,8 +6,8 @@ import { createRateLimiter } from "@/lib/rate-limit";
 import { createDbStore } from "@/lib/store/db-store";
 import type { RespondDeps } from "./respond";
 
-// Per conversation id, in memory. Enough for a person typing; a client that
-// rotates ids is not covered, that needs an IP or session based limit.
+// Per conversation id, in memory. Enough for a person typing. A client that
+// rotates ids runs into the per-IP quota on the web route (see quota.ts).
 const RATE_LIMIT = { limit: 10, windowMs: 60_000 };
 
 const globalForDeps = globalThis as unknown as { respondDeps?: RespondDeps };

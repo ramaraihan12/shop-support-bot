@@ -1,4 +1,4 @@
-import { asc, cosineDistance, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { asc, cosineDistance, desc, eq, ilike, lte, or, sql, type SQL } from "drizzle-orm";
 import type { Database } from "@/lib/db";
 import {
   conversations,
@@ -8,6 +8,7 @@ import {
   orders,
   policyChunks,
   products,
+  rateLimits,
   tickets,
 } from "@/lib/db/schema";
 import type { OrderRecord } from "@/lib/orders";
@@ -167,6 +168,31 @@ export function createDbStore(db: Database): SupportStore {
         .returning({ id: tickets.id });
       if (!row) throw new Error("Ticket insert returned nothing");
       return { id: row.id, code: ticketCode(row.id) };
+    },
+
+    async countHit(key, windowSeconds) {
+      const expired = sql`${rateLimits.expiresAt} <= now()`;
+      // One statement, so instances hitting the same key can't lose a count.
+      const [row] = await db
+        .insert(rateLimits)
+        .values({ key, hits: 1, expiresAt: sql`now() + ${windowSeconds} * interval '1 second'` })
+        .onConflictDoUpdate({
+          target: rateLimits.key,
+          set: {
+            hits: sql`case when ${expired} then 1 else ${rateLimits.hits} + 1 end`,
+            expiresAt: sql`case when ${expired} then excluded.expires_at else ${rateLimits.expiresAt} end`,
+          },
+        })
+        .returning({
+          hits: rateLimits.hits,
+          retryAfterSeconds: sql<number>`ceil(extract(epoch from ${rateLimits.expiresAt} - now()))`.mapWith(Number),
+        });
+      if (!row) throw new Error("Rate limit upsert returned nothing");
+      return row;
+    },
+
+    async deleteExpiredHits() {
+      await db.delete(rateLimits).where(lte(rateLimits.expiresAt, sql`now()`));
     },
   };
 }

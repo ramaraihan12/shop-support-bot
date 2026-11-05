@@ -1,8 +1,11 @@
 import { createUIMessageStream, createUIMessageStreamResponse, toUIMessageStream } from "ai";
 import { z } from "zod";
 import { getRespondDeps } from "@/lib/chat/deps";
+import { detectLanguage } from "@/lib/chat/language";
+import { checkChatQuota, clientIp, MAX_BODY_BYTES } from "@/lib/chat/quota";
 import { replies } from "@/lib/chat/replies";
-import { respond } from "@/lib/chat/respond";
+import { MAX_MESSAGE_CHARS, respond } from "@/lib/chat/respond";
+import { getEnv } from "@/lib/env";
 
 // Local models on a laptop GPU can take a while with a couple of tool calls.
 export const maxDuration = 120;
@@ -17,8 +20,23 @@ const requestSchema = z.object({
   }),
 });
 
+const tooLarge = () => Response.json({ error: "Message is too long" }, { status: 413 });
+
+function parseJson(body: string): unknown {
+  try {
+    return JSON.parse(body);
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: Request) {
-  const parsed = requestSchema.safeParse(await request.json().catch(() => null));
+  if (Number(request.headers.get("content-length")) > MAX_BODY_BYTES) return tooLarge();
+  const body = await request.text();
+  // Content-Length can be missing or wrong, so check what actually arrived.
+  if (Buffer.byteLength(body) > MAX_BODY_BYTES) return tooLarge();
+
+  const parsed = requestSchema.safeParse(parseJson(body));
   if (!parsed.success) {
     return Response.json({ error: "Invalid chat request" }, { status: 400 });
   }
@@ -30,8 +48,28 @@ export async function POST(request: Request) {
   if (!text) {
     return Response.json({ error: "Message is empty" }, { status: 400 });
   }
+  if (text.length > MAX_MESSAGE_CHARS) return tooLarge();
 
-  const reply = await respond(getRespondDeps(), { channel: "web", externalId: parsed.data.id, text });
+  const deps = getRespondDeps();
+
+  // A local model has no quota to run out of.
+  const { AI_PROVIDER, EMBEDDING_PROVIDER } = getEnv();
+  if (AI_PROVIDER !== "ollama" || EMBEDDING_PROVIDER !== "ollama") {
+    const quota = await checkChatQuota(deps.store, clientIp(request.headers));
+    if (!quota.allowed) {
+      const language = detectLanguage(text);
+      return createUIMessageStreamResponse({
+        stream: fixedTextStream(
+          quota.window === "minute"
+            ? replies.rateLimited(language, quota.retryAfterSeconds)
+            : replies.dailyLimit(language),
+        ),
+        headers: { "Retry-After": String(quota.retryAfterSeconds) },
+      });
+    }
+  }
+
+  const reply = await respond(deps, { channel: "web", externalId: parsed.data.id, text });
 
   if (reply.kind === "model") {
     return createUIMessageStreamResponse({
