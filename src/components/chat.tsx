@@ -2,6 +2,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, getToolName, isTextUIPart, isToolUIPart, type UIMessage } from "ai";
+import { RECORDED_EXAMPLE } from "@/lib/recorded-example";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 const SUGGESTIONS = [
@@ -29,7 +30,7 @@ const transport = new DefaultChatTransport({
   }),
 });
 
-export function Chat() {
+export function Chat({ blocked = false }: { blocked?: boolean }) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const { messages, sendMessage, status, error, clearError } = useChat({ transport });
@@ -79,7 +80,9 @@ export function Chat() {
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-2xl flex-col gap-4 px-4 py-6">
-          {messages.length === 0 ? (
+          {blocked ? (
+            <RegionNotice />
+          ) : messages.length === 0 ? (
             <Welcome onPick={send} />
           ) : (
             messages.map((message) => <MessageRow key={message.id} message={message} />)
@@ -93,33 +96,58 @@ export function Chat() {
         </div>
       </div>
 
-      <form onSubmit={onSubmit} className="border-t border-husk bg-panel">
-        <div className="mx-auto flex max-w-2xl items-end gap-2 px-4 py-3">
-          <label htmlFor="message" className="sr-only">
-            Tulis pesan
-          </label>
-          <textarea
-            id="message"
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={onKeyDown}
-            rows={1}
-            maxLength={MAX_LENGTH}
-            placeholder="Tulis pesan... / Type a message..."
-            className="field-sizing-content max-h-40 min-h-11 flex-1 resize-none rounded-xl border border-husk bg-paper px-3 py-2.5 text-[15px] leading-snug placeholder:text-muted/70"
-          />
-          <button
-            type="submit"
-            disabled={busy || !input.trim()}
-            className="h-11 rounded-xl bg-bean px-4 text-sm font-semibold text-white transition-colors hover:bg-bean-deep disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Kirim
-          </button>
-        </div>
-        <p className="mx-auto max-w-2xl px-4 pb-3 text-xs text-muted">
-          Cek pesanan butuh nomor pesanan (KN-12345) dan email atau nomor HP yang dipakai saat checkout.
+      {!blocked && (
+        <form onSubmit={onSubmit} className="border-t border-husk bg-panel">
+          <div className="mx-auto flex max-w-2xl items-end gap-2 px-4 py-3">
+            <label htmlFor="message" className="sr-only">
+              Tulis pesan
+            </label>
+            <textarea
+              id="message"
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={onKeyDown}
+              rows={1}
+              maxLength={MAX_LENGTH}
+              placeholder="Tulis pesan... / Type a message..."
+              className="field-sizing-content max-h-40 min-h-11 flex-1 resize-none rounded-xl border border-husk bg-paper px-3 py-2.5 text-[15px] leading-snug placeholder:text-muted/70"
+            />
+            <button
+              type="submit"
+              disabled={busy || !input.trim()}
+              className="h-11 rounded-xl bg-bean px-4 text-sm font-semibold text-white transition-colors hover:bg-bean-deep disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Kirim
+            </button>
+          </div>
+          <p className="mx-auto max-w-2xl px-4 pb-3 text-xs text-muted">
+            Cek pesanan butuh nomor pesanan (KN-12345) dan email atau nomor HP yang dipakai saat checkout. Jangan
+            isi data pribadi lain. Don&apos;t enter personal information.
+          </p>
+        </form>
+      )}
+    </div>
+  );
+}
+
+function RegionNotice() {
+  return (
+    <div className="flex flex-col gap-4 pt-6">
+      <p role="status" className="rounded-lg border border-husk bg-panel px-4 py-3 text-sm leading-relaxed">
+        The live AI part of this demo isn&apos;t available in the EEA, Switzerland or the UK, because it runs on a
+        free model tier whose terms exclude those regions. Here&apos;s a recorded example instead.
+      </p>
+      <div className="flex flex-col gap-1.5 items-end">
+        <p className="max-w-[85%] rounded-2xl rounded-br-sm bg-bean px-4 py-2.5 text-[15px] leading-relaxed text-white">
+          {RECORDED_EXAMPLE.question}
         </p>
-      </form>
+      </div>
+      <div className="flex flex-col gap-1.5 items-start">
+        <p className="max-w-[85%] rounded-2xl rounded-bl-sm border border-husk bg-panel px-4 py-2.5 text-[15px] leading-relaxed">
+          {RECORDED_EXAMPLE.answer}
+        </p>
+      </div>
+      <p className="text-xs text-muted">Recorded {RECORDED_EXAMPLE.recordedOn} from the live demo.</p>
     </div>
   );
 }

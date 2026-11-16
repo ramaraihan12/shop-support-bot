@@ -4,7 +4,7 @@
 
 A support chatbot for a small online shop. The demo shop is a made-up Indonesian coffee roaster, Kopi Nusantara. The bot answers questions from the shop's policy docs, checks orders and stock, opens tickets, and hands the chat to a human when the customer asks or is clearly upset. It replies in Bahasa Indonesia or English, whichever the customer writes in.
 
-**Live demo:** https://shop-support-bot-ivory.vercel.app (no login). Try order `KN-10231` with `rina.wulandari@example.com`. It runs on Gemini's free tier with a small daily message cap, and the database sleeps when idle, so the first reply can take a few seconds longer.
+**Live demo:** https://shop-support-bot-ivory.vercel.app (no login). Try order `KN-10231` with `rina.wulandari@example.com`. It runs on Gemini's free tier with a small daily message cap, and the database sleeps when idle, so the first reply can take a few seconds longer. Because the free Gemini tier's terms exclude the EEA, Switzerland and the UK, the live chat is switched off for visitors there and they see a recorded example instead.
 
 ![Chat on a local Ollama model](docs/screenshot.png)
 

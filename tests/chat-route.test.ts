@@ -37,8 +37,8 @@ function post(body: string, headers: Record<string, string> = {}) {
   );
 }
 
-function chat(text: string, id = "session-1") {
-  return post(JSON.stringify({ id, message: { role: "user", parts: [{ type: "text", text }] } }));
+function chat(text: string, id = "session-1", headers: Record<string, string> = {}) {
+  return post(JSON.stringify({ id, message: { role: "user", parts: [{ type: "text", text }] } }), headers);
 }
 
 async function exhaustMinute() {
@@ -59,6 +59,34 @@ describe("POST /api/chat", () => {
 
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("Gayo masih ada.");
+  });
+
+  it("answers 451 for a blocked country without touching the model or the quota", async () => {
+    const model = vi.fn();
+    mocks.deps = { ...(mocks.deps as object), model };
+
+    for (const country of ["DE", "gb", "CH", "NO", "RE"]) {
+      const response = await chat("stok gayo ada?", "session-1", { "x-vercel-ip-country": country });
+      expect(response.status).toBe(451);
+      expect(await response.json()).toHaveProperty("error");
+    }
+
+    expect(model).not.toHaveBeenCalled();
+    expect(store.hitCounts.size).toBe(0);
+  });
+
+  it("answers normally for an allowed country", async () => {
+    useModel(scriptedModel([{ text: "Gayo masih ada." }]));
+
+    const response = await chat("stok gayo ada?", "session-1", { "x-vercel-ip-country": "ID" });
+
+    expect(response.status).toBe(200);
+  });
+
+  it("allows a request with no country header", async () => {
+    useModel(scriptedModel([{ text: "Gayo masih ada." }]));
+
+    expect((await chat("stok gayo ada?")).status).toBe(200);
   });
 
   it("refuses a body over the size cap before doing any work", async () => {

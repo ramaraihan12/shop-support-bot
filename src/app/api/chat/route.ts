@@ -6,6 +6,7 @@ import { checkChatQuota, clientIp, MAX_BODY_BYTES } from "@/lib/chat/quota";
 import { replies } from "@/lib/chat/replies";
 import { MAX_MESSAGE_CHARS, respond } from "@/lib/chat/respond";
 import { getEnv } from "@/lib/env";
+import { BLOCKED_NOTICE, isBlockedRegion } from "@/lib/geo";
 
 // Local models on a laptop GPU can take a while with a couple of tool calls.
 export const maxDuration = 120;
@@ -31,6 +32,9 @@ function parseJson(body: string): unknown {
 }
 
 export async function POST(request: Request) {
+  if (isBlockedRegion(request.headers)) {
+    return Response.json({ error: BLOCKED_NOTICE }, { status: 451 });
+  }
   if (Number(request.headers.get("content-length")) > MAX_BODY_BYTES) return tooLarge();
   const body = await request.text();
   // Content-Length can be missing or wrong, so check what actually arrived.
