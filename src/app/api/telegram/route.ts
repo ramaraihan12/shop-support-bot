@@ -8,6 +8,8 @@ export const maxDuration = 120;
 
 export async function POST(request: Request) {
   const { TELEGRAM_BOT_TOKEN: token, TELEGRAM_WEBHOOK_SECRET: secret } = getEnv();
+  // No region check here, unlike the web chat. These calls come from Telegram's
+  // servers, so the user's country is unknown and lib/geo.ts has nothing to look at.
   if (!token || !secret) {
     return new Response("Telegram is not configured", { status: 404 });
   }

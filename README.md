@@ -56,6 +56,8 @@ Settings are in `.env.example`. To use another provider set `AI_PROVIDER` and th
 2. Set `TELEGRAM_WEBHOOK_SECRET` to any string of letters, digits, `_` or `-`.
 3. Expose the app over https (ngrok or similar) and run `pnpm telegram:webhook https://<your host>`.
 
+The region block only covers the web chat. Telegram updates come from Telegram's servers, so the bot can't tell where the user is. If you turn it on with the Gemini free tier and people in the EEA, Switzerland or the UK can reach the bot, use a paid tier or another provider instead.
+
 ## Tests
 
 ```sh
