@@ -7,6 +7,13 @@ import { startHandoff } from "./handoff";
 import { findPolicies } from "./policies";
 
 export const MAX_FAILED_LOOKUPS = 5;
+// The web route takes the conversation id from the client, so a fresh id resets
+// the per-conversation lock above. This counts lookups per order number instead,
+// which a client can't reset. Trade-off: anyone can use up one order's lookups
+// for a day. Fine for a demo. The "lookup:" prefix can't clash with the "ip:" and
+// "all:" keys in quota.ts, and deleteExpiredHits clears these rows with the rest.
+export const MAX_LOOKUPS_PER_ORDER = 10;
+const LOOKUP_WINDOW_SECONDS = 86_400;
 const LOW_STOCK = 5;
 const POLICY_RESULTS = 4;
 
@@ -68,7 +75,10 @@ export function createSupportTools({ store, conversation, embed, lastUserMessage
         "Get the status of one order. Requires the order number and the email or phone number used at checkout.",
       inputSchema: lookupOrderInput,
       execute: async ({ orderNumber, email, phone }) => {
-        if (conversation.failedLookups >= MAX_FAILED_LOOKUPS) {
+        // Counted before the lookup, in one atomic statement, because a step's
+        // tool calls run in parallel and a read-then-write check would let them all through.
+        const { hits } = await store.countHit(`lookup:${orderNumber}`, LOOKUP_WINDOW_SECONDS);
+        if (hits > MAX_LOOKUPS_PER_ORDER || conversation.failedLookups >= MAX_FAILED_LOOKUPS) {
           return {
             status: "locked" as const,
             message: "Too many failed attempts in this chat. Offer to hand the customer over to the team.",
