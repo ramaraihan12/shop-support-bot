@@ -78,7 +78,15 @@ export function createSupportTools({ store, conversation, embed, lastUserMessage
         // Counted before the lookup, in one atomic statement, because a step's
         // tool calls run in parallel and a read-then-write check would let them all through.
         const { hits } = await store.countHit(`lookup:${orderNumber}`, LOOKUP_WINDOW_SECONDS);
-        if (hits > MAX_LOOKUPS_PER_ORDER || conversation.failedLookups >= MAX_FAILED_LOOKUPS) {
+        // Counted for any order number, existing or not, so this message
+        // doesn't reveal whether the order exists.
+        if (hits > MAX_LOOKUPS_PER_ORDER) {
+          return {
+            status: "locked" as const,
+            message: "This order has been looked up too many times today. Offer to hand the customer over to the team.",
+          };
+        }
+        if (conversation.failedLookups >= MAX_FAILED_LOOKUPS) {
           return {
             status: "locked" as const,
             message: "Too many failed attempts in this chat. Offer to hand the customer over to the team.",

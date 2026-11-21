@@ -15,7 +15,7 @@ async function lookup(orderNumber: string, conversationId: string) {
     { orderNumber, email: "guess@example.com" },
     { toolCallId: "t", messages: [], context: {} },
   );
-  return result as { status: string };
+  return result as { status: string; message?: string };
 }
 
 describe("lookupOrder per-order lock", () => {
@@ -23,7 +23,11 @@ describe("lookupOrder per-order lock", () => {
     for (let i = 0; i < MAX_LOOKUPS_PER_ORDER; i++) {
       expect((await lookup("KN-10234", `fresh-${i}`)).status).toBe("not_found");
     }
-    expect((await lookup("KN-10234", "fresh-last")).status).toBe("locked");
+    const locked = await lookup("KN-10234", "fresh-last");
+    expect(locked.status).toBe("locked");
+    expect(locked.message).toBe(
+      "This order has been looked up too many times today. Offer to hand the customer over to the team.",
+    );
     expect(store.orderLookups).toHaveLength(MAX_LOOKUPS_PER_ORDER);
   });
 
