@@ -7,6 +7,16 @@ import { startHandoff } from "./handoff";
 import { findPolicies } from "./policies";
 
 export const MAX_FAILED_LOOKUPS = 5;
+// The web route takes the conversation id from the client, so a fresh id resets
+// the per-conversation lock above. This counts lookups per order number instead,
+// which a client can't reset. Trade-off: anyone can use up one order's lookups
+// for a day. Fine for a demo. The "lookup:" prefix can't clash with the "ip:" and
+// "all:" keys in quota.ts, and deleteExpiredHits clears these rows with the rest.
+export const MAX_LOOKUPS_PER_ORDER = 10;
+const LOOKUP_WINDOW_SECONDS = 86_400;
+// Per message, not per day: the model runs a step's tool calls in parallel, so
+// without this one message could try a whole range of order numbers.
+export const MAX_LOOKUPS_PER_MESSAGE = 2;
 const LOW_STOCK = 5;
 const POLICY_RESULTS = 4;
 
@@ -40,6 +50,9 @@ type ToolDeps = {
 };
 
 export function createSupportTools({ store, conversation, embed, lastUserMessage }: ToolDeps) {
+  // Tools are created once per message, so this counts lookups in one turn.
+  let lookupsThisMessage = 0;
+
   return {
     searchPolicies: tool({
       description:
@@ -68,6 +81,27 @@ export function createSupportTools({ store, conversation, embed, lastUserMessage
         "Get the status of one order. Requires the order number and the email or phone number used at checkout.",
       inputSchema: lookupOrderInput,
       execute: async ({ orderNumber, email, phone }) => {
+        // Incremented before any await, so parallel calls can't race it, and
+        // before the per-order count, so refused calls don't burn an order's daily count.
+        if (++lookupsThisMessage > MAX_LOOKUPS_PER_MESSAGE) {
+          return {
+            status: "locked" as const,
+            message:
+              "Only two orders can be checked per message. Ask the customer to send the next order number in a new message.",
+          };
+        }
+
+        // Counted before the lookup, in one atomic statement, because a step's
+        // tool calls run in parallel and a read-then-write check would let them all through.
+        const { hits } = await store.countHit(`lookup:${orderNumber}`, LOOKUP_WINDOW_SECONDS);
+        // Counted for any order number, existing or not, so this message
+        // doesn't reveal whether the order exists.
+        if (hits > MAX_LOOKUPS_PER_ORDER) {
+          return {
+            status: "locked" as const,
+            message: "This order has been looked up too many times today. Offer to hand the customer over to the team.",
+          };
+        }
         if (conversation.failedLookups >= MAX_FAILED_LOOKUPS) {
           return {
             status: "locked" as const,
