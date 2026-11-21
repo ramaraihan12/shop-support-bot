@@ -14,6 +14,9 @@ export const MAX_FAILED_LOOKUPS = 5;
 // "all:" keys in quota.ts, and deleteExpiredHits clears these rows with the rest.
 export const MAX_LOOKUPS_PER_ORDER = 10;
 const LOOKUP_WINDOW_SECONDS = 86_400;
+// Per message, not per day: the model runs a step's tool calls in parallel, so
+// without this one message could try a whole range of order numbers.
+export const MAX_LOOKUPS_PER_MESSAGE = 2;
 const LOW_STOCK = 5;
 const POLICY_RESULTS = 4;
 
@@ -47,6 +50,9 @@ type ToolDeps = {
 };
 
 export function createSupportTools({ store, conversation, embed, lastUserMessage }: ToolDeps) {
+  // Tools are created once per message, so this counts lookups in one turn.
+  let lookupsThisMessage = 0;
+
   return {
     searchPolicies: tool({
       description:
@@ -75,6 +81,16 @@ export function createSupportTools({ store, conversation, embed, lastUserMessage
         "Get the status of one order. Requires the order number and the email or phone number used at checkout.",
       inputSchema: lookupOrderInput,
       execute: async ({ orderNumber, email, phone }) => {
+        // Incremented before any await, so parallel calls can't race it, and
+        // before the per-order count, so refused calls don't burn an order's daily count.
+        if (++lookupsThisMessage > MAX_LOOKUPS_PER_MESSAGE) {
+          return {
+            status: "locked" as const,
+            message:
+              "Only two orders can be checked per message. Ask the customer to send the next order number in a new message.",
+          };
+        }
+
         // Counted before the lookup, in one atomic statement, because a step's
         // tool calls run in parallel and a read-then-write check would let them all through.
         const { hits } = await store.countHit(`lookup:${orderNumber}`, LOOKUP_WINDOW_SECONDS);

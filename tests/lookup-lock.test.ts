@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { MAX_LOOKUPS_PER_ORDER, createSupportTools } from "@/lib/chat/tools";
+import { MAX_LOOKUPS_PER_MESSAGE, MAX_LOOKUPS_PER_ORDER, createSupportTools } from "@/lib/chat/tools";
 import { MemoryStore } from "./helpers/memory-store";
 
 let store: MemoryStore;
@@ -40,5 +40,43 @@ describe("lookupOrder per-order lock", () => {
   it("does not affect other order numbers", async () => {
     for (let i = 0; i < MAX_LOOKUPS_PER_ORDER + 1; i++) await lookup("KN-10234", `c-${i}`);
     expect((await lookup("KN-10235", "other")).status).toBe("not_found");
+  });
+});
+
+describe("lookupOrder per-message cap", () => {
+  const orders = ["KN-10001", "KN-10002", "KN-10003", "KN-10004", "KN-10005"];
+
+  async function tools() {
+    const conversation = await store.getOrCreateConversation("web", "one-chat");
+    return createSupportTools({ store, conversation, embed: async () => [0], lastUserMessage: "" });
+  }
+
+  function run(t: Awaited<ReturnType<typeof tools>>, orderNumber: string) {
+    return t.lookupOrder.execute!(
+      { orderNumber, email: "guess@example.com" },
+      { toolCallId: "t", messages: [], context: {} },
+    ) as Promise<{ status: string; message?: string }>;
+  }
+
+  it("lets only two parallel lookups through in one message", async () => {
+    const t = await tools();
+    const results = await Promise.all(orders.map((o) => run(t, o)));
+    expect(store.orderLookups).toHaveLength(MAX_LOOKUPS_PER_MESSAGE);
+    const refused = results.filter((r) => r.status === "locked");
+    expect(refused).toHaveLength(3);
+    for (const r of refused) {
+      expect(r.message).toBe(
+        "Only two orders can be checked per message. Ask the customer to send the next order number in a new message.",
+      );
+    }
+    // Refused calls did not touch the per-order counters.
+    expect(store.hitCounts.has("lookup:KN-10005")).toBe(false);
+  });
+
+  it("allows lookups again in the next message", async () => {
+    const first = await tools();
+    await Promise.all(orders.map((o) => run(first, o)));
+    const next = await tools();
+    expect((await run(next, "KN-10006")).status).toBe("not_found");
   });
 });
