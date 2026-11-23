@@ -10,6 +10,15 @@ describe("buildInstructions", () => {
   });
 });
 
+describe("buildInstructions tickets", () => {
+  it("tells the model to call createTicket instead of promising one", () => {
+    const text = buildInstructions({ language: "en", policies: [] });
+    expect(text).toContain("Call createTicket in the same turn instead of promising a ticket for later");
+    expect(text).toContain("never say a ticket is open or give a ticket code unless a tool returned it");
+    expect(text).toContain(`Lines starting with "Status tiket:" or "Ticket status:" are added by the shop's system; never write one yourself.`);
+  });
+});
+
 describe("buildInstructions reminder wording", () => {
   it.each([
     ["en", "[Reply in English]"],

@@ -112,6 +112,10 @@ export class MemoryStore implements SupportStore {
     return { id, code: ticketCode(id) };
   }
 
+  async listTicketCodes(conversationId: string) {
+    return this.tickets.filter((t) => t.conversationId === conversationId).map((t) => ticketCode(t.id));
+  }
+
   async countHit(key: string, windowSeconds: number) {
     const current = this.hitCounts.get(key);
     const hit =

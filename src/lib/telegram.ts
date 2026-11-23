@@ -23,6 +23,17 @@ export type TelegramApi = {
   sendTyping(chatId: number): Promise<void>;
 };
 
+// The ticket status line goes last, and it is the part the customer must not
+// lose, so a long reply is cut in the model's text, not in the line.
+const STATUS_LINE = /\n\n((?:Status tiket|Ticket status): [^\n]*)$/;
+
+export function fitTelegramText(text: string): string {
+  if (text.length <= TELEGRAM_MAX_TEXT) return text;
+  const tail = STATUS_LINE.exec(text)?.[1];
+  if (!tail || tail.length + 2 > TELEGRAM_MAX_TEXT) return text.slice(0, TELEGRAM_MAX_TEXT);
+  return `${text.slice(0, TELEGRAM_MAX_TEXT - tail.length - 2).trimEnd()}\n\n${tail}`;
+}
+
 export function createTelegramApi(token: string, fetchFn: typeof fetch = fetch): TelegramApi {
   const call = async (method: string, body: Record<string, unknown>) => {
     const response = await fetchFn(`https://api.telegram.org/bot${token}/${method}`, {
@@ -37,7 +48,7 @@ export function createTelegramApi(token: string, fetchFn: typeof fetch = fetch):
   };
 
   return {
-    sendMessage: (chatId, text) => call("sendMessage", { chat_id: chatId, text: text.slice(0, TELEGRAM_MAX_TEXT) }),
+    sendMessage: (chatId, text) => call("sendMessage", { chat_id: chatId, text: fitTelegramText(text) }),
     sendTyping: (chatId) => call("sendChatAction", { chat_id: chatId, action: "typing" }),
   };
 }

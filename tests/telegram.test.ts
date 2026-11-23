@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { replies } from "@/lib/chat/replies";
 import type { RespondDeps } from "@/lib/chat/respond";
 import { createRateLimiter } from "@/lib/rate-limit";
-import { createTelegramApi, handleTelegramUpdate, telegramUpdateSchema, type TelegramApi } from "@/lib/telegram";
+import { createTelegramApi, fitTelegramText, handleTelegramUpdate, telegramUpdateSchema, type TelegramApi } from "@/lib/telegram";
 import { MemoryStore } from "./helpers/memory-store";
 import { scriptedModel } from "./helpers/mock-model";
 
@@ -47,6 +48,34 @@ describe("handleTelegramUpdate", () => {
 
     expect(sent).toEqual([{ chatId: 4242, text: "Gayo Wine masih ada, Rp135.000." }]);
     expect(store.conversations[0]).toMatchObject({ channel: "telegram", externalId: "4242" });
+  });
+
+  it("sends the ticket status line along with a reply that promises a ticket", async () => {
+    const { api, sent } = fakeApi();
+    const model = scriptedModel([{ text: "Tiket Anda telah dibuat dengan kode TKT-20261121-001." }]);
+
+    await handleTelegramUpdate(deps(model), api, update("buatkan tiket, kemasan sobek"));
+
+    expect(sent[0]?.text).toBe(`Tiket Anda telah dibuat dengan kode TKT-20261121-001.\n\n${replies.ticketStatus.none("id")}`);
+  });
+
+  it("keeps the status line when a long reply is cut to Telegram's limit", () => {
+    const longReply = "x".repeat(5000);
+    const line = replies.ticketStatus.none("en");
+    const cut = fitTelegramText(`${longReply}\n\n${line}`);
+
+    expect(cut).toHaveLength(4096);
+    expect(cut.endsWith(`\n\n${line}`)).toBe(true);
+
+    const two = replies.ticketStatus.open("id", ["TK-0001", "TK-0002"]);
+    expect(fitTelegramText(`${longReply}\n\n${two}`).endsWith(`\n\n${two}`)).toBe(true);
+    expect(fitTelegramText(`${longReply}\n\n${replies.ticketStatus.none("id")}`)).toHaveLength(4096);
+  });
+
+  it("never returns more than the limit, even for an oversized status line or no line", () => {
+    expect(fitTelegramText(`${"x".repeat(5000)}\n\nStatus tiket: ${"y".repeat(5000)}`)).toHaveLength(4096);
+    expect(fitTelegramText("y".repeat(5000))).toHaveLength(4096);
+    expect(fitTelegramText("short")).toBe("short");
   });
 
   it("answers /start without calling the model", async () => {
@@ -106,6 +135,17 @@ describe("createTelegramApi", () => {
     const body = JSON.parse(String(init?.body)) as { chat_id: number; text: string };
     expect(body.chat_id).toBe(4242);
     expect(body.text).toHaveLength(4096);
+  });
+
+  it("keeps the ticket status line when it cuts a long message", async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
+    const line = replies.ticketStatus.none("id");
+
+    await createTelegramApi("123:abc", fetchFn).sendMessage(4242, `${"x".repeat(5000)}\n\n${line}`);
+
+    const body = JSON.parse(String(fetchFn.mock.calls[0]![1]?.body)) as { text: string };
+    expect(body.text).toHaveLength(4096);
+    expect(body.text.endsWith(line)).toBe(true);
   });
 
   it("throws with Telegram's error so the route can log it", async () => {
