@@ -170,6 +170,17 @@ export function createDbStore(db: Database): SupportStore {
       return { id: row.id, code: ticketCode(row.id) };
     },
 
+    async listTicketCodes(conversationId) {
+      // No index on conversation_id: the table stays small and this only runs
+      // when a reply mentions a ticket.
+      const rows = await db
+        .select({ id: tickets.id })
+        .from(tickets)
+        .where(eq(tickets.conversationId, conversationId))
+        .orderBy(asc(tickets.id));
+      return rows.map((row) => ticketCode(row.id));
+    },
+
     async countHit(key, windowSeconds) {
       const expired = sql`${rateLimits.expiresAt} <= now()`;
       // One statement, so instances hitting the same key can't lose a count.

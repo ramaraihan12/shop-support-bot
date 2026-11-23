@@ -126,6 +126,24 @@ describe.skipIf(!url)("db store against postgres", () => {
     expect(ticket.code).toMatch(/^TK-\d{4,}$/);
   });
 
+  it("lists the ticket codes of one conversation, oldest first", async () => {
+    const mine = await store.getOrCreateConversation("web", `${EXTERNAL_PREFIX}list-a`);
+    const other = await store.getOrCreateConversation("web", `${EXTERNAL_PREFIX}list-b`);
+    const ticket = (conversationId: string) => ({
+      conversationId,
+      category: "other" as const,
+      priority: "normal" as const,
+      subject: "Pertanyaan lain",
+      details: "Detail pertanyaan.",
+    });
+    const first = await store.createTicket(ticket(mine.id));
+    await store.createTicket(ticket(other.id));
+    const second = await store.createTicket(ticket(mine.id));
+
+    expect(await store.listTicketCodes(mine.id)).toEqual([first.code, second.code]);
+    expect(await store.listTicketCodes(other.id)).toHaveLength(1);
+  });
+
   it("never loses a hit when requests land at the same time", async () => {
     const key = `${EXTERNAL_PREFIX}burst`;
 

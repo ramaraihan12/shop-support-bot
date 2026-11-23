@@ -64,6 +64,8 @@ export interface SupportStore {
   searchProducts(query: string | undefined, limit: number): Promise<ProductRecord[]>;
   searchPolicies(embedding: number[], limit: number): Promise<PolicyMatch[]>;
   createTicket(ticket: NewTicket): Promise<{ id: number; code: string }>;
+  /** Codes of the tickets opened in a conversation, oldest first. */
+  listTicketCodes(conversationId: string): Promise<string[]>;
   /** Adds one hit to a fixed-window counter and returns the new count. */
   countHit(key: string, windowSeconds: number): Promise<CountedHit>;
   deleteExpiredHits(): Promise<void>;
