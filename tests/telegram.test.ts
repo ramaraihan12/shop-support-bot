@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { replies } from "@/lib/chat/replies";
 import type { RespondDeps } from "@/lib/chat/respond";
 import { createRateLimiter } from "@/lib/rate-limit";
-import { createTelegramApi, handleTelegramUpdate, telegramUpdateSchema, type TelegramApi } from "@/lib/telegram";
+import { createTelegramApi, fitTelegramText, handleTelegramUpdate, telegramUpdateSchema, type TelegramApi } from "@/lib/telegram";
 import { MemoryStore } from "./helpers/memory-store";
 import { scriptedModel } from "./helpers/mock-model";
 
@@ -50,13 +50,23 @@ describe("handleTelegramUpdate", () => {
     expect(store.conversations[0]).toMatchObject({ channel: "telegram", externalId: "4242" });
   });
 
-  it("sends the ticket note along with a reply that promises a ticket", async () => {
+  it("sends the ticket status line along with a reply that promises a ticket", async () => {
     const { api, sent } = fakeApi();
     const model = scriptedModel([{ text: "Tiket Anda telah dibuat dengan kode TKT-20261121-001." }]);
 
     await handleTelegramUpdate(deps(model), api, update("buatkan tiket, kemasan sobek"));
 
-    expect(sent[0]?.text).toBe(`Tiket Anda telah dibuat dengan kode TKT-20261121-001.\n\n${replies.noTicketOpened("id")}`);
+    expect(sent[0]?.text).toBe(`Tiket Anda telah dibuat dengan kode TKT-20261121-001.\n\n${replies.ticketStatus.none("id")}`);
+  });
+
+  it("keeps the status line when a long reply is cut to Telegram's limit", () => {
+    const line = replies.ticketStatus.none("en");
+    const cut = fitTelegramText(`${"x".repeat(5000)}\n\n${line}`);
+
+    expect(cut).toHaveLength(4096);
+    expect(cut.endsWith(`\n\n${line}`)).toBe(true);
+    expect(fitTelegramText("short")).toBe("short");
+    expect(fitTelegramText("y".repeat(5000))).toHaveLength(4096);
   });
 
   it("answers /start without calling the model", async () => {

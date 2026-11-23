@@ -68,7 +68,7 @@ describe("POST /api/chat", () => {
     const body = await (await chat("buatkan tiket, kemasan sobek")).text();
 
     expect(body).toContain("Saya sudah membuka tiket untuk kamu.");
-    expect(body).toContain(replies.noTicketOpened("id").slice(0, 40));
+    expect(body).toContain(replies.ticketStatus.none("id").slice(0, 40));
   });
 
   it("answers 451 for a blocked country without touching the model or the quota", async () => {

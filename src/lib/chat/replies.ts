@@ -12,18 +12,19 @@ export const replies = {
       ? "Pesan kamu sudah tercatat. Tim CS kami akan membalas di jam kerja (Senin-Sabtu 09.00-17.00 WIB)."
       : "Got it, your message is saved. Our support team will reply during working hours (Monday to Saturday, 09:00-17:00 WIB).",
 
-  // Added when a model reply talks about a ticket that no tool opened. It has
-  // to be true even if the check was wrong, and the quoted phrase has to be
-  // one that detectHandoff() matches (tests/ticket-claims.test.ts checks it).
-  noTicketOpened: (lang: Language) =>
-    lang === "id"
-      ? 'Catatan: balasan ini tidak membuka tiket apa pun, jadi abaikan kode tiket baru di balasan ini. Supaya tiket benar-benar terbuka, tulis "hubungkan ke admin".'
-      : 'Note: this reply did not open a ticket, so ignore any new ticket code in it. To get a real ticket opened, write "talk to a person".',
-
-  otherCodesNotValid: (lang: Language, openedCodes: string[]) =>
-    lang === "id"
-      ? `Catatan: tiket yang benar-benar dibuka di balasan ini hanya ${openedCodes.join(", ")}. Kode tiket lain di balasan ini tidak berlaku.`
-      : `Note: the only ticket actually opened in this reply is ${openedCodes.join(", ")}. Any other ticket code in it is not valid.`,
+  // Added under a model reply that mentions a ticket, so the customer can see
+  // what really exists. True whatever the model wrote. The quoted phrase has
+  // to be one that detectHandoff() matches (tests/ticket-status.test.ts).
+  ticketStatus: {
+    none: (lang: Language) =>
+      lang === "id"
+        ? 'Status tiket: belum ada tiket di percakapan ini. Kalau mau dibukakan tiket sekarang, tulis "hubungkan ke admin".'
+        : 'Ticket status: no ticket has been opened in this chat yet. To get one opened now, write "talk to a person".',
+    open: (lang: Language, codes: string[]) =>
+      lang === "id"
+        ? `Status tiket: tiket di percakapan ini: ${codes.join(", ")}.`
+        : `Ticket status: tickets in this chat: ${codes.join(", ")}.`,
+  },
 
   rateLimited: (lang: Language, retryAfterSeconds: number) =>
     lang === "id"
