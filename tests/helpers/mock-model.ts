@@ -6,7 +6,7 @@ type StreamPart = StreamResult["stream"] extends ReadableStream<infer P> ? P : n
 
 type Step =
   // A step can speak before it calls the tool, the way small models do.
-  | { toolCall: { name: string; input: Record<string, unknown> }; text?: string; finishReason?: "stop" }
+  | { toolCall: { name: string; input: Record<string, unknown> }; text?: string; finishReason?: "stop" | "length" }
   | { text: string };
 
 const usage = {
@@ -40,7 +40,7 @@ export function scriptedModel(steps: Step[]) {
                   toolName: step.toolCall.name,
                   input: JSON.stringify(step.toolCall.input),
                 },
-                { type: "finish", finishReason: step.finishReason ? { unified: "stop", raw: "stop" } : { unified: "tool-calls", raw: "tool_calls" }, usage },
+                { type: "finish", finishReason: step.finishReason ? { unified: step.finishReason, raw: step.finishReason } : { unified: "tool-calls", raw: "tool_calls" }, usage },
               ]
             : [
                 { type: "text-start", id: `text-${i}` },

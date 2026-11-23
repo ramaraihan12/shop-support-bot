@@ -62,7 +62,7 @@ describe("POST /api/chat", () => {
     expect(await response.text()).toContain("Gayo masih ada.");
   });
 
-  it("streams the ticket note after a reply that promises a ticket", async () => {
+  it("streams the ticket status line after a reply that promises a ticket", async () => {
     useModel(scriptedModel([{ text: "Saya sudah membuka tiket untuk kamu." }]));
 
     const body = await (await chat("buatkan tiket, kemasan sobek")).text();

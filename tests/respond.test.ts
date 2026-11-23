@@ -303,4 +303,3 @@ describe("guardrails before the model", () => {
     expect(other.reply.kind).toBe("model");
   });
 });
-

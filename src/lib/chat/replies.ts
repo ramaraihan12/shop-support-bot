@@ -13,17 +13,17 @@ export const replies = {
       : "Got it, your message is saved. Our support team will reply during working hours (Monday to Saturday, 09:00-17:00 WIB).",
 
   // Added under a model reply that mentions a ticket, so the customer can see
-  // what really exists. True whatever the model wrote. The quoted phrase has
-  // to be one that detectHandoff() matches (tests/ticket-status.test.ts).
+  // which tickets really exist. True whatever the model wrote. The quoted
+  // phrase has to be one that detectHandoff() matches (tests/ticket-status.test.ts).
   ticketStatus: {
     none: (lang: Language) =>
       lang === "id"
-        ? 'Status tiket: belum ada tiket di percakapan ini. Kalau mau dibukakan tiket sekarang, tulis "hubungkan ke admin".'
-        : 'Ticket status: no ticket has been opened in this chat yet. To get one opened now, write "talk to a person".',
+        ? 'Status tiket: belum ada tiket di percakapan ini. Kalau mau diteruskan ke tim CS dan dibukakan tiket, tulis "hubungkan ke admin".'
+        : 'Ticket status: no ticket has been opened in this chat yet. To be handed over to our team with a ticket, write "talk to a person".',
     open: (lang: Language, codes: string[]) =>
       lang === "id"
-        ? `Status tiket: tiket di percakapan ini: ${codes.join(", ")}.`
-        : `Ticket status: tickets in this chat: ${codes.join(", ")}.`,
+        ? `Status tiket: ${codes.join(", ")} sudah dibuka di percakapan ini.`
+        : `Ticket status: ${codes.join(", ")} opened in this chat.`,
   },
 
   rateLimited: (lang: Language, retryAfterSeconds: number) =>

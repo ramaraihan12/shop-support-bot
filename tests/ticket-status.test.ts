@@ -1,9 +1,9 @@
 import { MockLanguageModelV4 } from "ai/test";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { detectHandoff } from "@/lib/chat/handoff";
 import { replies } from "@/lib/chat/replies";
 import { MAX_STEPS, respond, type RespondDeps } from "@/lib/chat/respond";
-import { mentionsTicket, ticketStatusLine } from "@/lib/chat/ticket-status";
+import { LOOKUP_TIMEOUT_MS, mentionsTicket, ticketStatusLine } from "@/lib/chat/ticket-status";
 import { createRateLimiter } from "@/lib/rate-limit";
 import { MemoryStore } from "./helpers/memory-store";
 import { scriptedModel } from "./helpers/mock-model";
@@ -12,6 +12,11 @@ let store: MemoryStore;
 
 beforeEach(() => {
   store = new MemoryStore();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 function deps(model: RespondDeps["model"]): RespondDeps {
@@ -35,33 +40,44 @@ const validTicket = {
   details: "Paket KN-10234 datang dengan kemasan sobek.",
   contact: "bagus.pratama@example.com",
 };
+const stock = { name: "checkStock", input: { query: "gayo" } };
 const none = replies.ticketStatus.none("id");
+const open = (codes: string[]) => replies.ticketStatus.open("id", codes);
 const withLine = (text: string, line: string) => `${text}\n\n${line}`;
 
-async function openTicketBefore(externalId = "session-1") {
+async function openTicketsBefore(externalId: string, count = 1) {
   const conversation = await store.getOrCreateConversation("web", externalId);
-  return store.createTicket({
-    conversationId: conversation.id,
-    category: "other",
-    priority: "normal",
-    subject: "Pertanyaan lain",
-    details: "Detail pertanyaan.",
-  });
+  for (let i = 0; i < count; i++) {
+    await store.createTicket({
+      conversationId: conversation.id,
+      category: "other",
+      priority: "normal",
+      subject: "Pertanyaan lain",
+      details: "Detail pertanyaan.",
+    });
+  }
 }
 
 describe("mentionsTicket", () => {
-  it.each(["Tiket Anda sudah dibuat", "your ticket", "Tickets are answered", "TIKETNYA", "kode TK-0001", "ref TKT-20261121-001", "tk0042"])(
-    "sees a ticket in: %s",
-    (text) => expect(mentionsTicket(text)).toBe(true),
-  );
+  it.each([
+    "Tiket Anda sudah dibuat",
+    "your ticket",
+    "Tickets are answered",
+    "TIKETNYA",
+    "_tiket_ dibuat",
+    "*tiket* dibuat",
+    "kode TK-0001",
+    "(TKT-20261121-001)",
+    "tk0042",
+  ])("sees a ticket in: %s", (text) => expect(mentionsTicket(text)).toBe(true));
 
   it.each(["Pesanan KN-10234 sudah dikirim", "Gayo masih ada", "multiticket", "stiker lucu"])("leaves alone: %s", (text) =>
     expect(mentionsTicket(text)).toBe(false),
   );
 
-  it("stays fast on long runs of whitespace and dashes", () => {
+  it("stays fast on long runs of whitespace, dashes and underscores", () => {
     const start = Date.now();
-    mentionsTicket(`${" ".repeat(200_000)}tk${"-".repeat(200_000)}`);
+    mentionsTicket(`${" ".repeat(200_000)}tk${"-".repeat(200_000)}${"_".repeat(200_000)}`);
     expect(Date.now() - start).toBeLessThan(500);
   });
 });
@@ -72,9 +88,38 @@ describe("ticketStatusLine", () => {
     expect(await ticketStatusLine({ reply, language: "id", listTicketCodes: async () => [] })).toBeNull();
   });
 
-  it("treats TK0001 and tk-0001 as the real TK-0001", async () => {
-    const line = await ticketStatusLine({ reply: "Tiket tk0001 dibuat.", language: "id", listTicketCodes: async () => ["TK-0001"] });
+  it("lists both codes when a conversation has two tickets", async () => {
+    const line = await ticketStatusLine({ reply: "Tiket TK-0001 dibuat.", language: "id", listTicketCodes: async () => ["TK-0001", "TK-0002"] });
+    expect(line).toBe("Status tiket: TK-0001, TK-0002 sudah dibuka di percakapan ini.");
+    expect(replies.ticketStatus.open("en", ["TK-0001", "TK-0002"])).toBe("Ticket status: TK-0001, TK-0002 opened in this chat.");
+  });
+
+  it("shows only the five newest codes", async () => {
+    const codes = ["TK-0001", "TK-0002", "TK-0003", "TK-0004", "TK-0005", "TK-0006", "TK-0007"];
+    const line = await ticketStatusLine({ reply: "Tiket dibuat.", language: "en", listTicketCodes: async () => codes });
+    expect(line).toBe(replies.ticketStatus.open("en", codes.slice(2)));
+  });
+
+  it("gives up on a lookup that never answers, within the timeout, and adds no line", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const started = Date.now();
+
+    const line = await ticketStatusLine({
+      reply: "Tiket dibuat.",
+      language: "id",
+      listTicketCodes: () => new Promise<string[]>(() => {}),
+      timeoutMs: 50,
+    });
+
     expect(line).toBeNull();
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(logged).toHaveBeenCalledWith("ticket lookup failed", expect.any(Error));
+  });
+
+  it("clears its timer when the lookup answers", async () => {
+    vi.useFakeTimers();
+    await ticketStatusLine({ reply: "Tiket dibuat.", language: "id", listTicketCodes: async () => [] });
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
@@ -141,7 +186,7 @@ describe("a reply that talks about a ticket nobody opened", () => {
 });
 
 describe("a reply when tickets exist", () => {
-  it("adds nothing when createTicket succeeded and the reply quotes only that code", async () => {
+  it("confirms the ticket createTicket opened, even when the reply quotes only that code", async () => {
     const model = scriptedModel([
       { toolCall: { name: "createTicket", input: validTicket } },
       { text: "Tiket TK-0001 sudah dibuat." },
@@ -149,24 +194,36 @@ describe("a reply when tickets exist", () => {
 
     const { text } = await send(model, "paket saya sobek");
 
-    expect(text).toBe("Tiket TK-0001 sudah dibuat.");
+    expect(text).toBe(withLine("Tiket TK-0001 sudah dibuat.", open(["TK-0001"])));
   });
 
   it("lists the real tickets when an earlier turn opened one and the reply claims a new one without a code", async () => {
-    await openTicketBefore();
+    await openTicketsBefore("session-1");
     const { text } = await send(scriptedModel([{ text: "Saya sudah membuka tiket baru untuk kamu." }]), "ada masalah lagi");
-    expect(text).toBe(withLine("Saya sudah membuka tiket baru untuk kamu.", replies.ticketStatus.open("id", ["TK-0001"])));
+    expect(text).toBe(withLine("Saya sudah membuka tiket baru untuk kamu.", open(["TK-0001"])));
   });
 
-  it("lists the real tickets when an invented code appears next to a real one", async () => {
-    const model = scriptedModel([
-      { toolCall: { name: "createTicket", input: validTicket } },
-      { text: "Tiket TK-0001 dan tiket TKT-20261121-001 sudah dibuat." },
-    ]);
+  it("lists two tickets of the conversation", async () => {
+    await openTicketsBefore("session-1", 2);
+    const { text } = await send(scriptedModel([{ text: "Tiket kamu sedang diproses." }]), "tiketnya gimana?");
+    expect(text).toBe(withLine("Tiket kamu sedang diproses.", open(["TK-0001", "TK-0002"])));
+  });
 
-    const { text } = await send(model, "paket saya sobek");
+  it("lists only the five newest when there are more", async () => {
+    await openTicketsBefore("session-1", 7);
+    const { text } = await send(scriptedModel([{ text: "Tiket kamu sedang diproses." }]), "tiketnya gimana?");
+    expect(text).toBe(withLine("Tiket kamu sedang diproses.", open(["TK-0003", "TK-0004", "TK-0005", "TK-0006", "TK-0007"])));
+  });
 
-    expect(text).toBe(withLine("Tiket TK-0001 dan tiket TKT-20261121-001 sudah dibuat.", replies.ticketStatus.open("id", ["TK-0001"])));
+  it("never shows a code from another conversation", async () => {
+    await openTicketsBefore("someone-else");
+    const none2 = await send(scriptedModel([{ text: "Tiket kamu sedang diproses." }]), "tiketnya gimana?", "session-1");
+    expect(none2.text).toBe(withLine("Tiket kamu sedang diproses.", none));
+    expect(none2.text).not.toContain("TK-0001");
+
+    await openTicketsBefore("session-1");
+    const own = await send(scriptedModel([{ text: "Tiket kamu sedang diproses." }]), "tiketnya gimana?", "session-1");
+    expect(own.text).toBe(withLine("Tiket kamu sedang diproses.", open(["TK-0002"])));
   });
 
   it("lists the ticket when the insert worked but the handoff failed afterwards", async () => {
@@ -179,7 +236,7 @@ describe("a reply when tickets exist", () => {
     const { text } = await send(model, "ini sudah ketiga kalinya telat, saya capek nanya terus");
 
     expect(store.tickets).toHaveLength(1);
-    expect(text).toBe(withLine("Tiket sudah dibuat untuk tim kami.", replies.ticketStatus.open("id", ["TK-0001"])));
+    expect(text).toBe(withLine("Tiket sudah dibuat untuk tim kami.", open(["TK-0001"])));
   });
 });
 
@@ -202,13 +259,23 @@ describe("when the lookup fails", () => {
 
     expect(text).toBe("Saya sudah membuka tiket.");
     expect(logged).toHaveBeenCalledWith("ticket lookup failed", expect.any(Error));
-    logged.mockRestore();
+  });
+
+  it("does not hold the reply up when the lookup never answers", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.spyOn(store, "listTicketCodes").mockReturnValue(new Promise<string[]>(() => {}));
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const sent = send(scriptedModel([{ text: "Saya sudah membuka tiket." }]), "buatkan tiket");
+    await vi.advanceTimersByTimeAsync(LOOKUP_TIMEOUT_MS + 10);
+    const { text } = await sent;
+
+    expect(text).toBe("Saya sudah membuka tiket.");
+    expect(logged).toHaveBeenCalledWith("ticket lookup failed", expect.any(Error));
   });
 });
 
 describe("which step gets the line", () => {
-  const stock = { name: "checkStock", input: { query: "gayo" } };
-
   it("counts text from a step before the last one", async () => {
     const model = scriptedModel([
       { text: "Saya sudah membuka tiket untuk kamu.", toolCall: stock },
@@ -231,6 +298,28 @@ describe("which step gets the line", () => {
 
     expect(steps[0]?.text).toBe("Saya sudah membuka tiket.");
     expect(text).toBe(withLine("Gayo Wine masih ada.", none));
+  });
+
+  it("does not add the line early to a step whose tool call was rejected", async () => {
+    const model = scriptedModel([
+      { text: "Saya sudah membuka tiket.", toolCall: { name: "createTicket", input: { ...validTicket, subject: "x" } } },
+      { text: "Maaf, ada yang kurang." },
+    ]);
+
+    const { result, text } = await send(model, "paket saya sobek");
+    const steps = await result.steps;
+
+    expect(steps[0]?.text).toBe("Saya sudah membuka tiket.");
+    expect(text).toBe(withLine("Maaf, ada yang kurang.", none));
+  });
+
+  it("adds the line when a tool call ends the loop without an output", async () => {
+    // A tool call the loop can't answer (here: truncated by the provider) ends the loop on that step.
+    const model = scriptedModel([{ text: "Tiket sudah dibuat.", toolCall: stock, finishReason: "length" }, { text: "tidak sampai sini" }]);
+
+    const { text } = await send(model, "stok gayo ada?");
+
+    expect(text).toBe(withLine("Tiket sudah dibuat.", none));
   });
 
   it("adds the line when the step limit ends the loop on a tool call", async () => {
