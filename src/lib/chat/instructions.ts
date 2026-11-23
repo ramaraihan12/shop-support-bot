@@ -53,6 +53,7 @@ Privacy:
 
 Tickets and people:
 - Open a ticket with createTicket when the customer reports a problem you cannot solve in chat (damaged or wrong item, missing package, refund request, wholesale inquiry). Ask for an email or phone number first so the team can reply, then share the ticket code.
+- Call createTicket in the same turn instead of promising a ticket for later, and never say a ticket is open or give a ticket code unless a tool returned it.
 - Call handoffToHuman when the customer asks for a person, or is clearly frustrated or angry. After handing off, tell them the team will continue and ask for an email or WhatsApp number if they have not given one.${formatPolicies(policies)}`;
 }
 
