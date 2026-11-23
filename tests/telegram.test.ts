@@ -60,13 +60,22 @@ describe("handleTelegramUpdate", () => {
   });
 
   it("keeps the status line when a long reply is cut to Telegram's limit", () => {
+    const longReply = "x".repeat(5000);
     const line = replies.ticketStatus.none("en");
-    const cut = fitTelegramText(`${"x".repeat(5000)}\n\n${line}`);
+    const cut = fitTelegramText(`${longReply}\n\n${line}`);
 
     expect(cut).toHaveLength(4096);
     expect(cut.endsWith(`\n\n${line}`)).toBe(true);
-    expect(fitTelegramText("short")).toBe("short");
+
+    const two = replies.ticketStatus.open("id", ["TK-0001", "TK-0002"]);
+    expect(fitTelegramText(`${longReply}\n\n${two}`).endsWith(`\n\n${two}`)).toBe(true);
+    expect(fitTelegramText(`${longReply}\n\n${replies.ticketStatus.none("id")}`)).toHaveLength(4096);
+  });
+
+  it("never returns more than the limit, even for an oversized status line or no line", () => {
+    expect(fitTelegramText(`${"x".repeat(5000)}\n\nStatus tiket: ${"y".repeat(5000)}`)).toHaveLength(4096);
     expect(fitTelegramText("y".repeat(5000))).toHaveLength(4096);
+    expect(fitTelegramText("short")).toBe("short");
   });
 
   it("answers /start without calling the model", async () => {
@@ -126,6 +135,17 @@ describe("createTelegramApi", () => {
     const body = JSON.parse(String(init?.body)) as { chat_id: number; text: string };
     expect(body.chat_id).toBe(4242);
     expect(body.text).toHaveLength(4096);
+  });
+
+  it("keeps the ticket status line when it cuts a long message", async () => {
+    const fetchFn = vi.fn<typeof fetch>(async () => new Response("{}", { status: 200 }));
+    const line = replies.ticketStatus.none("id");
+
+    await createTelegramApi("123:abc", fetchFn).sendMessage(4242, `${"x".repeat(5000)}\n\n${line}`);
+
+    const body = JSON.parse(String(fetchFn.mock.calls[0]![1]?.body)) as { text: string };
+    expect(body.text).toHaveLength(4096);
+    expect(body.text.endsWith(line)).toBe(true);
   });
 
   it("throws with Telegram's error so the route can log it", async () => {

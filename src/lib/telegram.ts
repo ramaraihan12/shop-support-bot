@@ -30,7 +30,7 @@ const STATUS_LINE = /\n\n((?:Status tiket|Ticket status): [^\n]*)$/;
 export function fitTelegramText(text: string): string {
   if (text.length <= TELEGRAM_MAX_TEXT) return text;
   const tail = STATUS_LINE.exec(text)?.[1];
-  if (!tail) return text.slice(0, TELEGRAM_MAX_TEXT);
+  if (!tail || tail.length + 2 > TELEGRAM_MAX_TEXT) return text.slice(0, TELEGRAM_MAX_TEXT);
   return `${text.slice(0, TELEGRAM_MAX_TEXT - tail.length - 2).trimEnd()}\n\n${tail}`;
 }
 
