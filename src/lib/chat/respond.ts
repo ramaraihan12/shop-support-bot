@@ -7,6 +7,7 @@ import { buildInstructions, languageReminder } from "./instructions";
 import { detectLanguage, type Language } from "./language";
 import { findPolicies, type PolicyExcerpt } from "./policies";
 import { replies } from "./replies";
+import { ticketNoteTransform } from "./ticket-note";
 import { createSupportTools } from "./tools";
 
 export const HISTORY_LIMIT = 20;
@@ -132,6 +133,10 @@ function streamModelReply(
     stopWhen: isStepCount(MAX_STEPS),
     // On the last step, force an answer instead of yet another tool call.
     prepareStep: ({ stepNumber }) => (stepNumber === MAX_STEPS - 1 ? { toolChoice: "none" } : {}),
+    experimental_transform: ticketNoteTransform({
+      language,
+      knownText: [...history.map((m) => m.content), text],
+    }),
     providerOptions: deps.providerOptions,
     onEnd: async ({ text: answer, toolCalls }) => {
       if (!answer.trim()) return;

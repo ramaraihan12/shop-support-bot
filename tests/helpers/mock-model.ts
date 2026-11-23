@@ -4,7 +4,10 @@ import { MockLanguageModelV4 } from "ai/test";
 type StreamResult = Awaited<ReturnType<MockLanguageModelV4["doStream"]>>;
 type StreamPart = StreamResult["stream"] extends ReadableStream<infer P> ? P : never;
 
-type Step = { toolCall: { name: string; input: Record<string, unknown> } } | { text: string };
+type Step =
+  // A step can speak before it calls the tool, the way small models do.
+  | { toolCall: { name: string; input: Record<string, unknown> }; text?: string }
+  | { text: string };
 
 const usage = {
   inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
@@ -24,6 +27,13 @@ export function scriptedModel(steps: Step[]) {
         chunks:
           "toolCall" in step
             ? [
+                ...("text" in step && step.text
+                  ? ([
+                      { type: "text-start", id: `text-${i}` },
+                      { type: "text-delta", id: `text-${i}`, delta: step.text },
+                      { type: "text-end", id: `text-${i}` },
+                    ] satisfies StreamPart[])
+                  : []),
                 {
                   type: "tool-call",
                   toolCallId: `call-${i}`,

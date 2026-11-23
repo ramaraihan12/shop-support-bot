@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { replies } from "@/lib/chat/replies";
 import { respond, type RespondDeps } from "@/lib/chat/respond";
 import { MAX_FAILED_LOOKUPS } from "@/lib/chat/tools";
 import { createRateLimiter } from "@/lib/rate-limit";
@@ -301,5 +302,125 @@ describe("guardrails before the model", () => {
 
     const other = await send(deps(scriptedModel([{ text: "Hai" }]), { limiter }), "halo", "session-2");
     expect(other.reply.kind).toBe("model");
+  });
+});
+
+describe("tickets the model only talks about", () => {
+  const validTicket = {
+    category: "order",
+    subject: "Kemasan sobek",
+    details: "Paket KN-10234 datang dengan kemasan sobek.",
+    contact: "bagus.pratama@example.com",
+  };
+
+  it("adds a note when the reply says a ticket is open but no tool ran", async () => {
+    const model = scriptedModel([{ text: "Tiket Anda telah dibuat dengan kode **TKT-20261121-001**." }]);
+
+    const { text } = await send(deps(model), "tolong buatkan tiket, email saya bagus.pratama@example.com");
+
+    expect(text).toBe(`Tiket Anda telah dibuat dengan kode **TKT-20261121-001**.\n\n${replies.noTicketOpened("id")}`);
+    expect(store.tickets).toHaveLength(0);
+  });
+
+  it("saves the note with the assistant message", async () => {
+    const model = scriptedModel([{ text: "Saya sudah membuka tiket untuk laporan kemasan sobek." }]);
+
+    await send(deps(model), "kemasan sobek, buatkan tiket");
+
+    expect(store.messages.at(-1)?.content).toContain(replies.noTicketOpened("id"));
+  });
+
+  it("writes the note in English when the customer wrote in English", async () => {
+    const model = scriptedModel([{ text: "I've opened a ticket for the torn packaging." }]);
+
+    const { text } = await send(deps(model), "The package arrived torn, please open a ticket");
+
+    expect(text.endsWith(replies.noTicketOpened("en"))).toBe(true);
+  });
+
+  it("leaves the model's own text streaming first and puts the note after it", async () => {
+    const model = scriptedModel([{ text: "Saya sudah membuka tiket." }]);
+    const second = await respond(deps(model), { channel: "web", externalId: "session-2", text: "buatkan tiket" });
+    if (second.kind !== "model") throw new Error("expected a model reply");
+    const chunks: string[] = [];
+    for await (const chunk of second.result.textStream) chunks.push(chunk);
+
+    expect(chunks[0]).toBe("Saya sudah membuka tiket.");
+    expect(chunks.slice(1).join("")).toContain(replies.noTicketOpened("id"));
+  });
+
+  it("adds nothing when createTicket returned a code and the reply uses it", async () => {
+    const model = scriptedModel([
+      { toolCall: { name: "createTicket", input: validTicket } },
+      { text: "Tiket TK-0001 sudah dibuat." },
+    ]);
+
+    const { text } = await send(deps(model), "paket saya sobek");
+
+    expect(text).toBe("Tiket TK-0001 sudah dibuat.");
+  });
+
+  it("adds nothing when handoffToHuman returned a code", async () => {
+    const model = scriptedModel([
+      { toolCall: { name: "handoffToHuman", input: { reason: "Customer is frustrated about delays" } } },
+      { text: "Tiket TK-0001 sudah dibuat untuk tim kami." },
+    ]);
+
+    const { text } = await send(deps(model), "ini sudah ketiga kalinya telat, saya capek nanya terus");
+
+    expect(text).toBe("Tiket TK-0001 sudah dibuat untuk tim kami.");
+  });
+
+  it("adds nothing for an offer or a question", async () => {
+    const model = scriptedModel([{ text: "Mau saya buatkan tiket? Kalau kamu kirim email, saya buatkan tiketnya." }]);
+
+    const { text } = await send(deps(model), "kemasannya sobek");
+
+    expect(text).toBe("Mau saya buatkan tiket? Kalau kamu kirim email, saya buatkan tiketnya.");
+  });
+
+  it("adds a note when createTicket was rejected by validation", async () => {
+    const model = scriptedModel([
+      { toolCall: { name: "createTicket", input: { ...validTicket, subject: "x" } } },
+      { text: "Tiket Anda sudah dibuat." },
+    ]);
+
+    const { text } = await send(deps(model), "paket saya sobek");
+
+    expect(store.tickets).toHaveLength(0);
+    expect(text).toBe(`Tiket Anda sudah dibuat.\n\n${replies.noTicketOpened("id")}`);
+  });
+
+  it("catches a claim made in a step before the last one", async () => {
+    const model = scriptedModel([
+      { text: "Saya sudah membuka tiket untuk kamu.", toolCall: { name: "checkStock", input: { query: "gayo" } } },
+      { text: "Gayo Wine masih ada." },
+    ]);
+
+    const { text } = await send(deps(model), "stok gayo ada?");
+
+    expect(text).toBe(`Gayo Wine masih ada.\n\n${replies.noTicketOpened("id")}`);
+  });
+
+  it("names the real ticket when the reply also shows another code", async () => {
+    const model = scriptedModel([
+      { toolCall: { name: "createTicket", input: validTicket } },
+      { text: "Tiket Anda dibuat dengan kode TKT-20261121-001." },
+    ]);
+
+    const { text } = await send(deps(model), "paket saya sobek");
+
+    expect(text).toContain(replies.otherCodesNotValid("id", ["TK-0001"]));
+    expect(text).not.toContain(replies.noTicketOpened("id"));
+  });
+
+  it("accepts a code the customer typed or an earlier assistant message gave", async () => {
+    const conversation = await store.getOrCreateConversation("web", "session-1");
+    await store.saveMessage(conversation.id, { role: "assistant", content: "Tiket TK-0042 sedang diproses." });
+    const model = scriptedModel([{ text: "Tiket TK-0042 masih diproses. Kode TK-0099 juga sama." }]);
+
+    const { text } = await send(deps(model), "status tiket TK-0042 dan TK-0099?");
+
+    expect(text).toBe("Tiket TK-0042 masih diproses. Kode TK-0099 juga sama.");
   });
 });

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { replies } from "@/lib/chat/replies";
 import type { RespondDeps } from "@/lib/chat/respond";
 import { createRateLimiter } from "@/lib/rate-limit";
 import { createTelegramApi, handleTelegramUpdate, telegramUpdateSchema, type TelegramApi } from "@/lib/telegram";
@@ -47,6 +48,15 @@ describe("handleTelegramUpdate", () => {
 
     expect(sent).toEqual([{ chatId: 4242, text: "Gayo Wine masih ada, Rp135.000." }]);
     expect(store.conversations[0]).toMatchObject({ channel: "telegram", externalId: "4242" });
+  });
+
+  it("sends the ticket note along with a reply that promises a ticket", async () => {
+    const { api, sent } = fakeApi();
+    const model = scriptedModel([{ text: "Tiket Anda telah dibuat dengan kode TKT-20261121-001." }]);
+
+    await handleTelegramUpdate(deps(model), api, update("buatkan tiket, kemasan sobek"));
+
+    expect(sent[0]?.text).toBe(`Tiket Anda telah dibuat dengan kode TKT-20261121-001.\n\n${replies.noTicketOpened("id")}`);
   });
 
   it("answers /start without calling the model", async () => {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "@/app/api/chat/route";
 import { CHAT_QUOTAS, MAX_BODY_BYTES } from "@/lib/chat/quota";
+import { replies } from "@/lib/chat/replies";
 import { MAX_MESSAGE_CHARS, type RespondDeps } from "@/lib/chat/respond";
 import { createRateLimiter } from "@/lib/rate-limit";
 import { MemoryStore } from "./helpers/memory-store";
@@ -59,6 +60,15 @@ describe("POST /api/chat", () => {
 
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("Gayo masih ada.");
+  });
+
+  it("streams the ticket note after a reply that promises a ticket", async () => {
+    useModel(scriptedModel([{ text: "Saya sudah membuka tiket untuk kamu." }]));
+
+    const body = await (await chat("buatkan tiket, kemasan sobek")).text();
+
+    expect(body).toContain("Saya sudah membuka tiket untuk kamu.");
+    expect(body).toContain(replies.noTicketOpened("id").slice(0, 40));
   });
 
   it("answers 451 for a blocked country without touching the model or the quota", async () => {
