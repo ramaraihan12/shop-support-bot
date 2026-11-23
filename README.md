@@ -15,6 +15,7 @@ That conversation ran on a local `qwen3.5-9b` through Ollama. Note the last turn
 - Policy docs in `content/policies` are split into chunks, embedded and stored in Postgres with pgvector. Each turn the bot pulls the closest sections into the prompt.
 - Order status, stock and ticket creation are tool calls against Postgres. Tool inputs are checked with Zod.
 - An order lookup needs the order number plus the email or phone used at checkout. If they don't match, the answer is the same as for an order that doesn't exist.
+- If a reply says a ticket is open when no tool opened one, or shows a ticket code no tool returned, the bot adds a short note saying so and how to get a real ticket. It is a text check, not a second model call, and it never opens a ticket on its own.
 - Handoff and language are detected before the model runs, and there is a small in-memory rate limit per session.
 - With a hosted model, the web chat also has a per-IP and a daily quota. Those counters live in Postgres, because serverless instances share no memory.
 - The web chat streams over the AI SDK UI message protocol. The Telegram webhook uses the same `respond` function.
